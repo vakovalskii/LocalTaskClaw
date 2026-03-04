@@ -360,29 +360,157 @@ step "Шаг 5/7 — Модели"
 MODEL_URLS=()
 MODEL_KEYS=()
 MODEL_NAMES=()
+USE_OLLAMA=""
+OLLAMA_MODEL=""
 
-info "Добавь хотя бы одну OpenAI-совместимую модель."
-info "Примеры URL: https://api.openai.com/v1  /  http://109.230.162.92:44334/v1"
+echo "  ${BOLD}1)${NC} Ollama — локальная модель на этом сервере ${CYAN}(рекомендуем)${NC}"
+echo "  ${BOLD}2)${NC} Внешний API — OpenAI, свой сервер, облако"
 echo ""
+prompt MODEL_SOURCE_CHOICE "Выбор" "1"
 
-while true; do
-  IDX=$((${#MODEL_URLS[@]} + 1))
-  echo -e "${BOLD}Модель #${IDX}${NC}"
-  prompt MODEL_URL "  URL (base URL)" ""
-  prompt_secret MODEL_KEY "  API ключ"
-  prompt MODEL_NAME "  Название модели" "gpt-4o"
+if [[ "$MODEL_SOURCE_CHOICE" == "1" ]]; then
+  # --- Ollama path ---
+  USE_OLLAMA="yes"
 
-  MODEL_URLS+=("$MODEL_URL")
-  MODEL_KEYS+=("$MODEL_KEY")
-  MODEL_NAMES+=("$MODEL_NAME")
-  success "Модель '${MODEL_NAME}' добавлена"
+  # Detect RAM and GPU
+  TOTAL_RAM_GB=0
+  GPU_VRAM_GB=0
 
+  TOTAL_RAM_KB=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0")
+  TOTAL_RAM_GB=$(( TOTAL_RAM_KB / 1024 / 1024 ))
+
+  if command -v nvidia-smi &>/dev/null; then
+    GPU_VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ' || echo "0")
+    GPU_VRAM_GB=$(( GPU_VRAM_MB / 1024 ))
+  fi
+
+  info "RAM: ${BOLD}${TOTAL_RAM_GB}GB${NC}  GPU VRAM: ${BOLD}${GPU_VRAM_GB}GB${NC}"
   echo ""
-  echo -ne "${BOLD}Добавить ещё модель? [y/N]${NC}: "
-  read -r more_models
-  [[ "$more_models" =~ ^[Yy] ]] || break
+
+  # Pick available memory (prefer VRAM if GPU present)
+  AVAILABLE_GB=$TOTAL_RAM_GB
+  [[ "$GPU_VRAM_GB" -gt 4 ]] && AVAILABLE_GB=$GPU_VRAM_GB
+
+  # Model recommendations for agentic cycles (tool use, JSON)
+  echo -e "  ${BOLD}Рекомендуемые модели для агентного цикла:${NC}"
   echo ""
-done
+
+  declare -A MODEL_OPTIONS
+  OPT_NUM=1
+
+  add_model_option() {
+    local min_gb="$1" name="$2" tag="$3" size="$4" note="$5"
+    if [[ "$AVAILABLE_GB" -ge "$min_gb" ]]; then
+      echo "  ${BOLD}${OPT_NUM})${NC} ${name}:${tag}  ${YELLOW}(${size})${NC}  — ${note}"
+      MODEL_OPTIONS["$OPT_NUM"]="${name}:${tag}"
+      OPT_NUM=$((OPT_NUM + 1))
+    fi
+  }
+
+  add_model_option 3  "qwen2.5"    "3b"   "2.0GB"  "минимум RAM, базовый tool use"
+  add_model_option 6  "qwen2.5"    "7b"   "4.7GB"  "★ лучший выбор до 8GB, отличный tool use"
+  add_model_option 10 "llama3.1"   "8b"   "4.9GB"  "Meta, хорош для кода"
+  add_model_option 12 "qwen2.5"    "14b"  "9.0GB"  "★★ топ под 16GB, сильный reasoning"
+  add_model_option 22 "qwen2.5"    "32b"  "19GB"   "★★★ лучший до 32GB"
+  add_model_option 22 "deepseek-r1" "14b" "9.0GB"  "reasoning модель (цепочка мыслей)"
+  add_model_option 50 "qwen2.5"    "72b"  "47GB"   "топ open-source, нужно 48GB+"
+  add_model_option 50 "llama3.3"   "70b"  "43GB"   "Meta flagship"
+
+  LAST_OPT=$((OPT_NUM - 1))
+  echo "  ${BOLD}${OPT_NUM})${NC} Ввести своё название модели"
+  echo ""
+
+  prompt OLLAMA_CHOICE "Выбор" "1"
+
+  if [[ "$OLLAMA_CHOICE" == "$OPT_NUM" ]]; then
+    prompt OLLAMA_MODEL "Название модели (например: mistral:7b)" ""
+  elif [[ -n "${MODEL_OPTIONS[$OLLAMA_CHOICE]:-}" ]]; then
+    OLLAMA_MODEL="${MODEL_OPTIONS[$OLLAMA_CHOICE]}"
+  else
+    OLLAMA_MODEL="${MODEL_OPTIONS[1]:-qwen2.5:7b}"
+  fi
+
+  success "Выбрана модель: ${BOLD}${OLLAMA_MODEL}${NC}"
+
+  # Install Ollama if not present
+  echo ""
+  if command -v ollama &>/dev/null; then
+    success "Ollama уже установлен $(ollama --version 2>/dev/null || echo '')"
+  else
+    info "Устанавливаю Ollama..."
+    spinner_start "Установка Ollama..."
+    if curl -fsSL https://ollama.com/install.sh | sh &>/tmp/ollama_install.log 2>&1; then
+      spinner_stop
+      success "Ollama установлен"
+    else
+      spinner_stop
+      error "Ошибка установки Ollama:"
+      tail -10 /tmp/ollama_install.log
+      exit 1
+    fi
+  fi
+
+  # Start Ollama service if not running
+  if ! curl -s --max-time 2 http://localhost:11434/ &>/dev/null; then
+    info "Запускаю Ollama service..."
+    if command -v systemctl &>/dev/null && systemctl is-enabled ollama &>/dev/null 2>&1; then
+      systemctl start ollama
+    else
+      nohup ollama serve > /tmp/ollama.log 2>&1 &
+      sleep 3
+    fi
+  fi
+
+  # Pull model
+  echo ""
+  MODEL_SIZE_GB=$(echo "$OLLAMA_MODEL" | python3 -c "
+import sys
+m = sys.stdin.read().strip()
+sizes = {'3b':2,'7b':5,'8b':5,'14b':9,'32b':19,'70b':43,'72b':47}
+for k,v in sizes.items():
+    if k in m: print(v); exit()
+print(5)
+")
+  info "Скачиваю ${BOLD}${OLLAMA_MODEL}${NC} (~${MODEL_SIZE_GB}GB)..."
+  info "Это может занять несколько минут..."
+  echo ""
+  if ollama pull "$OLLAMA_MODEL"; then
+    success "Модель ${BOLD}${OLLAMA_MODEL}${NC} скачана"
+  else
+    error "Ошибка скачивания модели. Попробуй вручную: ollama pull ${OLLAMA_MODEL}"
+    exit 1
+  fi
+
+  # Set model config for docker (use host.docker.internal to reach Ollama from container)
+  MODEL_URLS=("http://host.docker.internal:11434/v1")
+  MODEL_KEYS=("ollama")
+  MODEL_NAMES=("$OLLAMA_MODEL")
+
+else
+  # --- External API path ---
+  info "Добавь хотя бы одну OpenAI-совместимую модель."
+  info "Примеры URL: https://api.openai.com/v1  /  http://109.230.162.92:44334/v1"
+  echo ""
+
+  while true; do
+    IDX=$((${#MODEL_URLS[@]} + 1))
+    echo -e "${BOLD}Модель #${IDX}${NC}"
+    prompt MODEL_URL "  URL (base URL)" ""
+    prompt_secret MODEL_KEY "  API ключ"
+    prompt MODEL_NAME "  Название модели" "gpt-4o"
+
+    MODEL_URLS+=("$MODEL_URL")
+    MODEL_KEYS+=("$MODEL_KEY")
+    MODEL_NAMES+=("$MODEL_NAME")
+    success "Модель '${MODEL_NAME}' добавлена"
+
+    echo ""
+    echo -ne "${BOLD}Добавить ещё модель? [y/N]${NC}: "
+    read -r more_models
+    [[ "$more_models" =~ ^[Yy] ]] || break
+    echo ""
+  done
+fi
 
 # --- Step 6: Brave Search ----------------------------------------------------
 
