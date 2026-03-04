@@ -1,0 +1,59 @@
+version: "3.9"
+
+# LocalClaw — 3-container stack
+# core: Python ReAct agent + FastAPI
+# bot: Telegram bot
+# (admin: coming in v0.2)
+#
+# Data volume: ./data/  (workspace, SQLite DB)
+# Secrets: ./secrets/   (env files, chmod 600)
+
+x-restart: &restart
+  restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  data:
+    driver: local
+
+services:
+
+  # ─── Core Agent ──────────────────────────────────────────────────────────────
+  core:
+    <<: *restart
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: localclaw-core
+    networks: [internal]
+    env_file: ./secrets/core.env
+    environment:
+      WORKSPACE: /data/workspace
+      DB_PATH: /data/localclaw.db
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8000:8000"   # only localhost — bot talks to it internally
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─── Telegram Bot ─────────────────────────────────────────────────────────────
+  bot:
+    <<: *restart
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: localclaw-bot
+    networks: [internal]
+    env_file: ./secrets/bot.env
+    environment:
+      CORE_URL: http://core:8000
+    depends_on:
+      core:
+        condition: service_healthy

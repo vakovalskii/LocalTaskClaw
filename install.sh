@@ -161,7 +161,32 @@ success "python3 $(python3 --version | awk '{print $2}')"
 
 # --- Step 2: Network ---------------------------------------------------------
 
-step "Шаг 2/7 — Сеть"
+step "Шаг 2/7 — Режим установки"
+
+echo "  ${BOLD}1)${NC} 🐳 Docker  — изолированно, для сервера ${CYAN}(рекомендуем)${NC}"
+echo "  ${BOLD}2)${NC} ⚡ Native  — без Docker, для MacBook / ноута"
+echo ""
+prompt INSTALL_MODE "Выбор" "1"
+
+if [[ "$INSTALL_MODE" == "2" ]]; then
+  # Native mode pre-checks
+  NATIVE_MODE="yes"
+  if ! command -v python3 &>/dev/null; then
+    error "python3 не найден. Установи: brew install python3 / apt install python3"
+    exit 1
+  fi
+  if ! python3 -m pip --version &>/dev/null 2>&1; then
+    error "pip не найден. Установи: python3 -m ensurepip"
+    exit 1
+  fi
+  success "Native mode: Python $(python3 --version | awk '{print $2}')"
+  INSTALL_DIR="$HOME/.localclaw"
+else
+  NATIVE_MODE=""
+  success "Docker mode"
+fi
+
+step "Шаг 3/7 — Сеть"
 
 USE_DOMAIN=""
 DOMAIN=""
@@ -249,7 +274,7 @@ success "URL: ${BOLD}$ACCESS_URL${NC}"
 
 # --- Step 3: Telegram --------------------------------------------------------
 
-step "Шаг 3/7 — Telegram бот"
+step "Шаг 4/7 — Telegram бот"
 
 TG_TOKEN=""
 BOT_USERNAME=""
@@ -341,7 +366,7 @@ fi
 
 # --- Step 4: Access policy ---------------------------------------------------
 
-step "Шаг 4/7 — Политика доступа"
+step "Шаг 5/7 — Политика доступа"
 
 echo "  ${BOLD}1)${NC} Только личные сообщения (DM)"
 echo "  ${BOLD}2)${NC} DM + разрешённые группы"
@@ -355,7 +380,7 @@ esac
 
 # --- Step 5: Models ----------------------------------------------------------
 
-step "Шаг 5/7 — Модели"
+step "Шаг 6/7 — Модели"
 
 MODEL_URLS=()
 MODEL_KEYS=()
