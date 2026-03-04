@@ -153,7 +153,21 @@ async def main():
     ])
 
     log.info(f"Bot started, owner_id={OWNER_ID}")
-    await app.run_polling(drop_pending_updates=True)
+
+    # run_polling has event loop issues on Python 3.14 — use manual lifecycle
+    async with app:
+        await app.updater.start_polling(drop_pending_updates=True)
+        await app.start()
+        log.info("Polling... (Ctrl+C to stop)")
+        # Keep running until interrupted
+        stop_event = asyncio.Event()
+        try:
+            await stop_event.wait()
+        except (KeyboardInterrupt, SystemExit):
+            pass
+        finally:
+            await app.updater.stop()
+            await app.stop()
 
 
 if __name__ == "__main__":

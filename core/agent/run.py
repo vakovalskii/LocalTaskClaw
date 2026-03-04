@@ -14,7 +14,7 @@ from db import log_event
 from agent._types import AgentResult, Session
 from agent.session import sessions
 from agent.prompt import load_system_prompt, format_system_prompt
-from agent.context import inject_memory
+from agent.context import inject_memory, inject_bootstrap_files, inject_daily_memory, seed_workspace
 from agent.skills import load_skills
 
 
@@ -35,8 +35,13 @@ async def run_agent(
     session = sessions.get(chat_id)
     cwd = session.cwd
 
+    # Seed workspace with default files on first run
+    seed_workspace(cwd)
+
     # Build workspace context
     workspace_info = f"Workspace: {cwd}"
+    workspace_info = await inject_bootstrap_files(cwd, workspace_info)
+    workspace_info = await inject_daily_memory(cwd, workspace_info)
     workspace_info, _ = await inject_memory(cwd, workspace_info)
 
     # Load skills and tools
