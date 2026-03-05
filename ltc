@@ -2,11 +2,16 @@
 # ltc — LocalTaskClaw CLI
 set -euo pipefail
 
+# ── Paths ────────────────────────────────────────────────────────────────────
+
 INSTALL_DIR="$HOME/.localtaskclaw"
 APP_DIR="$INSTALL_DIR/app"
 VENV="$INSTALL_DIR/venv"
 SECRETS="$INSTALL_DIR/app/secrets"
 PORT="${LTC_PORT:-11387}"
+
+# Docker install lives in ~/localtaskclaw (no dot)
+DOCKER_DIR="$HOME/localtaskclaw"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -17,20 +22,64 @@ NC='\033[0m'
 
 die() { echo -e "${RED}error:${NC} $1" >&2; exit 1; }
 
+# ── Mode detection ───────────────────────────────────────────────────────────
+
+_compose_cmd() {
+  if docker compose version &>/dev/null 2>&1; then
+    echo "docker compose"
+  elif command -v docker-compose &>/dev/null; then
+    echo "docker-compose"
+  else
+    echo ""
+  fi
+}
+
+_is_docker() {
+  [[ -f "$DOCKER_DIR/docker-compose.yml" ]] && return 0
+  return 1
+}
+
+_is_native() {
+  [[ -d "$APP_DIR" ]] && return 0
+  return 1
+}
+
+_detect_mode() {
+  if _is_docker; then
+    echo "docker"
+  elif _is_native; then
+    echo "native"
+  else
+    echo "none"
+  fi
+}
+
+MODE="$(_detect_mode)"
+COMPOSE=""
+if [[ "$MODE" == "docker" ]]; then
+  COMPOSE="$(_compose_cmd)"
+  [[ -z "$COMPOSE" ]] && die "Docker Compose not found"
+fi
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 _is_mac() { [[ "$(uname -s)" == "Darwin" ]]; }
 
 _plist() { echo "$HOME/Library/LaunchAgents/io.localtaskclaw.${1}.plist"; }
 
+_dc() { $COMPOSE -f "$DOCKER_DIR/docker-compose.yml" "$@"; }
+
 _is_running() {
   local svc="${1:-core}"
+  if [[ "$MODE" == "docker" ]]; then
+    _dc ps --format '{{.Service}} {{.State}}' 2>/dev/null | grep -q "^${svc}.*running" && return 0
+    return 1
+  fi
   if _is_mac; then
     launchctl list "io.localtaskclaw.${svc}" &>/dev/null && return 0
   else
     systemctl --user is-active "localtaskclaw-${svc}" &>/dev/null && return 0
   fi
-  # Fallback: check process
   pgrep -f "localtaskclaw.*${svc}" &>/dev/null
 }
 
@@ -38,9 +87,142 @@ _health() {
   curl -sf "http://localhost:${PORT}/health" &>/dev/null
 }
 
-# ── Commands ─────────────────────────────────────────────────────────────────
+_wait_healthy() {
+  local max="${1:-15}"
+  for _ in $(seq 1 "$max"); do
+    sleep 1
+    if _health; then
+      echo -e "${GREEN}Online${NC} — http://localhost:${PORT}/admin/"
+      return 0
+    fi
+  done
+  echo -e "${YELLOW}Started but health check timed out — check logs${NC}"
+  return 1
+}
 
-cmd_start() {
+_api_secret() {
+  if [[ "$MODE" == "docker" ]]; then
+    local sfile="$DOCKER_DIR/secrets/api_secret.txt"
+    [[ -f "$sfile" ]] && cat "$sfile" && return
+    # fallback: env file
+    local efile="$DOCKER_DIR/secrets/core.env"
+    [[ -f "$efile" ]] && grep '^API_SECRET=' "$efile" 2>/dev/null | cut -d= -f2 && return
+  else
+    [[ -f "$SECRETS/core.env" ]] && grep '^API_SECRET=' "$SECRETS/core.env" 2>/dev/null | cut -d= -f2 && return
+  fi
+  echo ""
+}
+
+# ── Docker commands ──────────────────────────────────────────────────────────
+
+docker_start() {
+  echo -e "${BOLD}Starting LocalTaskClaw (Docker)...${NC}"
+  _dc up -d
+  _wait_healthy 30
+}
+
+docker_stop() {
+  echo -e "${BOLD}Stopping LocalTaskClaw (Docker)...${NC}"
+  _dc down
+  echo -e "${GREEN}Stopped${NC}"
+}
+
+docker_restart() {
+  echo -e "${BOLD}Restarting LocalTaskClaw (Docker)...${NC}"
+  _dc restart
+  _wait_healthy 30
+}
+
+docker_status() {
+  echo -e "${BOLD}LocalTaskClaw Status (Docker)${NC}"
+  echo ""
+  _dc ps
+  echo ""
+  if _health; then
+    local model
+    model=$(curl -sf "http://localhost:${PORT}/health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('model','?'))" 2>/dev/null || echo "?")
+    echo -e "  core    ${GREEN}running${NC}  port $PORT  model: $model"
+  else
+    echo -e "  core    ${RED}not responding${NC}"
+  fi
+  echo ""
+}
+
+docker_logs() {
+  local svc="${1:-core}"
+  case "$svc" in
+    core|bot) ;;
+    *) die "Unknown service: $svc (use 'core' or 'bot')" ;;
+  esac
+  _dc logs -f "$svc"
+}
+
+docker_test() {
+  local target="${1:-all}"
+  shift 2>/dev/null || true
+  local keep=""
+  for arg in "$@"; do
+    [[ "$arg" == "--keep" ]] && keep=1
+  done
+
+  _is_running core || die "Core container is not running. Run: ltc start"
+
+  echo -e "${BOLD}Running tests (Docker)...${NC}\n"
+
+  # Install pytest inside container if needed
+  _dc exec core pip install -q pytest httpx 2>/dev/null || true
+
+  local test_path="/app/tests/"
+  case "$target" in
+    all)     test_path="/app/tests/" ;;
+    kanban)  test_path="/app/tests/test_kanban_e2e.py" ;;
+    seed)    test_path="/app/tests/test_seed_e2e.py" ;;
+    *)       die "Unknown test target: $target (use 'all', 'kanban', 'seed')" ;;
+  esac
+
+  _dc exec -e LTC_KEEP="$keep" core python -m pytest "$test_path" -v -s --tb=short
+}
+
+docker_seed() {
+  _is_running core || die "Core container is not running. Run: ltc start"
+  echo -e "${BOLD}Seeding demo data (Docker)...${NC}\n"
+  _dc exec core python /app/scripts/seed_kanban.py "$@"
+}
+
+docker_update() {
+  echo -e "${BOLD}Updating LocalTaskClaw (Docker)...${NC}"
+  _dc pull
+  _dc up -d
+  _wait_healthy 30
+}
+
+docker_build() {
+  echo -e "${BOLD}Building images...${NC}"
+  _dc build
+  echo -e "${GREEN}Done${NC}"
+}
+
+docker_uninstall() {
+  echo -e "${BOLD}Uninstalling LocalTaskClaw (Docker)...${NC}"
+  echo ""
+  echo -e "This will ${RED}remove${NC}:"
+  echo "  - Docker containers and images"
+  echo "  - $DOCKER_DIR (compose file, data, secrets)"
+  echo "  - ~/bin/ltc"
+  echo ""
+  echo -ne "${BOLD}Continue? [y/N]${NC}: "
+  read -r confirm
+  [[ "$confirm" =~ ^[Yy] ]] || { echo "Cancelled."; exit 0; }
+
+  _dc down --rmi local -v 2>/dev/null || true
+  rm -rf "$DOCKER_DIR"
+  rm -f "$HOME/bin/ltc"
+  echo -e "${GREEN}Removed${NC}"
+}
+
+# ── Native commands ──────────────────────────────────────────────────────────
+
+native_start() {
   echo -e "${BOLD}Starting LocalTaskClaw...${NC}"
   if _is_mac; then
     for svc in core bot; do
@@ -56,7 +238,6 @@ cmd_start() {
     systemctl --user start localtaskclaw-core localtaskclaw-bot 2>/dev/null
     echo -e "  ${GREEN}+${NC} core + bot"
   else
-    # nohup fallback
     cd "$APP_DIR/core"
     ENV_FILE="$SECRETS/core.env" \
       nohup "$VENV/bin/python" -m uvicorn api:app --host 0.0.0.0 --port "$PORT" \
@@ -67,18 +248,10 @@ cmd_start() {
       > /tmp/localtaskclaw-bot.log 2>&1 &
     echo -e "  ${GREEN}+${NC} core + bot (nohup)"
   fi
-  # Wait for health
-  for _ in $(seq 1 15); do
-    sleep 1
-    if _health; then
-      echo -e "${GREEN}Online${NC} — http://localhost:${PORT}/admin/"
-      return
-    fi
-  done
-  echo -e "${YELLOW}Started but health check timed out — check logs${NC}"
+  _wait_healthy 15
 }
 
-cmd_stop() {
+native_stop() {
   echo -e "${BOLD}Stopping LocalTaskClaw...${NC}"
   if _is_mac; then
     for svc in core bot; do
@@ -88,23 +261,20 @@ cmd_stop() {
   elif command -v systemctl &>/dev/null; then
     systemctl --user stop localtaskclaw-core localtaskclaw-bot 2>/dev/null || true
   fi
-  # Kill any remaining processes
   pkill -f '\.localtaskclaw/.*main\.py' 2>/dev/null || true
   pkill -f '\.localtaskclaw/.*uvicorn' 2>/dev/null || true
   echo -e "${GREEN}Stopped${NC}"
 }
 
-cmd_restart() {
-  cmd_stop
+native_restart() {
+  native_stop
   sleep 1
-  cmd_start
+  native_start
 }
 
-cmd_status() {
+native_status() {
   echo -e "${BOLD}LocalTaskClaw Status${NC}"
   echo ""
-
-  # Core
   if _is_running core; then
     if _health; then
       local model
@@ -116,25 +286,20 @@ cmd_status() {
   else
     echo -e "  core    ${RED}stopped${NC}"
   fi
-
-  # Bot
   if _is_running bot; then
     echo -e "  bot     ${GREEN}running${NC}"
   else
     echo -e "  bot     ${RED}stopped${NC}"
   fi
-
-  # Version
   if [[ -d "$APP_DIR/.git" ]]; then
     local hash
     hash=$(cd "$APP_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "?")
     echo -e "\n  version ${DIM}$hash${NC}"
   fi
-
   echo ""
 }
 
-cmd_logs() {
+native_logs() {
   local source="${1:-core}"
   case "$source" in
     core|bot) ;;
@@ -143,16 +308,11 @@ cmd_logs() {
   local logfile="/tmp/localtaskclaw-${source}.log"
   if [[ -f "$logfile" ]]; then
     tail -f "$logfile"
-  else
-    # Try fetching from API
-    if _health; then
-      local secret=""
-      if [[ -f "$SECRETS/core.env" ]]; then
-        secret=$(grep '^API_SECRET=' "$SECRETS/core.env" 2>/dev/null | cut -d= -f2 || true)
-      fi
-      echo -e "${DIM}Streaming from API...${NC}"
-      curl -sN "http://localhost:${PORT}/logs/tail?source=${source}&lines=100" \
-        -H "X-Api-Key: ${secret}" 2>/dev/null | python3 -c "
+  elif _health; then
+    local secret; secret="$(_api_secret)"
+    echo -e "${DIM}Streaming from API...${NC}"
+    curl -sN "http://localhost:${PORT}/logs/tail?source=${source}&lines=100" \
+      -H "X-Api-Key: ${secret}" 2>/dev/null | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -160,25 +320,22 @@ try:
         print(l)
 except: pass
 " 2>/dev/null
-      echo -e "\n${DIM}(Live streaming not available in CLI — use ltc open for live logs)${NC}"
-    else
-      die "No log file at $logfile and API is offline"
-    fi
+    echo -e "\n${DIM}(Live streaming not available in CLI — use ltc open for live logs)${NC}"
+  else
+    die "No log file at $logfile and API is offline"
   fi
 }
 
-cmd_test() {
+native_test() {
   local target="${1:-all}"
   shift 2>/dev/null || true
   [[ -d "$VENV" ]] || die "Venv not found at $VENV"
 
-  # Check for --keep flag
   local keep=""
   for arg in "$@"; do
     [[ "$arg" == "--keep" ]] && keep=1
   done
 
-  # Ensure pytest is installed
   if ! "$VENV/bin/python" -m pytest --version &>/dev/null; then
     echo -e "${DIM}Installing pytest...${NC}"
     "$VENV/bin/pip" install -q pytest httpx 2>/dev/null
@@ -196,7 +353,6 @@ cmd_test() {
       LTC_KEEP="$keep" "$VENV/bin/python" -m pytest "$APP_DIR/tests/test_seed_e2e.py" -v -s --tb=short
       ;;
     *)
-      # Try as a file path
       if [[ -f "$target" ]]; then
         LTC_KEEP="$keep" "$VENV/bin/python" -m pytest "$target" -v -s --tb=short
       else
@@ -206,16 +362,32 @@ cmd_test() {
   esac
 }
 
-cmd_seed() {
+native_seed() {
   [[ -d "$VENV" ]] || die "Venv not found"
   echo -e "${BOLD}Seeding demo data...${NC}\n"
   "$VENV/bin/python" "$APP_DIR/scripts/seed_kanban.py" "${@}"
 }
 
-cmd_update() {
+native_update() {
   [[ -f "$APP_DIR/update.sh" ]] || die "update.sh not found"
   bash "$APP_DIR/update.sh" "${@}"
 }
+
+native_build() {
+  [[ -d "$APP_DIR/frontend" ]] || die "frontend/ not found"
+  echo -e "${BOLD}Building frontend...${NC}"
+  cd "$APP_DIR/frontend"
+  npm install --silent 2>/dev/null
+  npm run build
+  echo -e "${GREEN}Done${NC} — output in admin/"
+}
+
+native_uninstall() {
+  [[ -f "$APP_DIR/uninstall.sh" ]] || die "uninstall.sh not found"
+  bash "$APP_DIR/uninstall.sh"
+}
+
+# ── Shared commands ──────────────────────────────────────────────────────────
 
 cmd_open() {
   local url="http://localhost:${PORT}/admin/"
@@ -229,22 +401,8 @@ cmd_open() {
   fi
 }
 
-cmd_uninstall() {
-  [[ -f "$APP_DIR/uninstall.sh" ]] || die "uninstall.sh not found"
-  bash "$APP_DIR/uninstall.sh"
-}
-
-cmd_build() {
-  [[ -d "$APP_DIR/frontend" ]] || die "frontend/ not found"
-  echo -e "${BOLD}Building frontend...${NC}"
-  cd "$APP_DIR/frontend"
-  npm install --silent 2>/dev/null
-  npm run build
-  echo -e "${GREEN}Done${NC} — output in admin/"
-}
-
 cmd_help() {
-  echo -e "${BOLD}ltc${NC} — LocalTaskClaw CLI"
+  echo -e "${BOLD}ltc${NC} — LocalTaskClaw CLI  ${DIM}(mode: $MODE)${NC}"
   echo ""
   echo -e "  ${GREEN}ltc start${NC}              Start services"
   echo -e "  ${GREEN}ltc stop${NC}               Stop services"
@@ -254,7 +412,7 @@ cmd_help() {
   echo -e "  ${GREEN}ltc test${NC} [all|kanban|seed] [--keep]  Run tests"
   echo -e "  ${GREEN}ltc seed${NC} [--reset]     Seed demo kanban data"
   echo -e "  ${GREEN}ltc update${NC}             Pull latest code & restart"
-  echo -e "  ${GREEN}ltc build${NC}              Rebuild frontend"
+  echo -e "  ${GREEN}ltc build${NC}              Rebuild frontend / images"
   echo -e "  ${GREEN}ltc open${NC}               Open admin UI in browser"
   echo -e "  ${GREEN}ltc uninstall${NC}          Remove LocalTaskClaw"
   echo -e "  ${GREEN}ltc help${NC}               Show this help"
@@ -263,21 +421,32 @@ cmd_help() {
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
 
+_route() {
+  local cmd="$1"; shift
+  [[ "$MODE" == "none" ]] && die "LocalTaskClaw not found. Install: curl -fsSL https://raw.githubusercontent.com/vakovalskii/LocalTaskClaw/main/install.sh | bash"
+
+  if [[ "$MODE" == "docker" ]]; then
+    "docker_${cmd}" "$@"
+  else
+    "native_${cmd}" "$@"
+  fi
+}
+
 cmd="${1:-help}"
 shift 2>/dev/null || true
 
 case "$cmd" in
-  start)      cmd_start "$@" ;;
-  stop)       cmd_stop "$@" ;;
-  restart)    cmd_restart "$@" ;;
-  status|st)  cmd_status "$@" ;;
-  logs|log)   cmd_logs "$@" ;;
-  test)       cmd_test "$@" ;;
-  seed)       cmd_seed "$@" ;;
-  update|up)  cmd_update "$@" ;;
-  build)      cmd_build "$@" ;;
-  open)       cmd_open "$@" ;;
-  uninstall)  cmd_uninstall "$@" ;;
+  start)      _route start "$@" ;;
+  stop)       _route stop "$@" ;;
+  restart)    _route restart "$@" ;;
+  status|st)  _route status "$@" ;;
+  logs|log)   _route logs "$@" ;;
+  test)       _route test "$@" ;;
+  seed)       _route seed "$@" ;;
+  update|up)  _route update "$@" ;;
+  build)      _route build "$@" ;;
+  open)       cmd_open ;;
+  uninstall)  _route uninstall "$@" ;;
   help|-h|--help) cmd_help ;;
   *) echo -e "${RED}Unknown command:${NC} $cmd"; echo ""; cmd_help; exit 1 ;;
 esac

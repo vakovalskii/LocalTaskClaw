@@ -53,7 +53,7 @@ The installer offers three isolation levels:
 
 ### 1. Docker (recommended for servers)
 
-Agent runs inside containers. Access is limited to a dedicated volume. Requires Docker and Docker Compose.
+Agent runs inside containers (multi-stage build: Node.js builds the React frontend, Python runs the core). Access is limited to a dedicated volume. Requires Docker, Docker Compose, and git.
 
 ### 2. Native processes
 

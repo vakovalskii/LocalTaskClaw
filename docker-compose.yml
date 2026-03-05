@@ -1,59 +1,48 @@
-version: "3.9"
-
-# LocalTaskClaw — 3-container stack
-# core: Python ReAct agent + FastAPI
-# bot: Telegram bot
-# (admin: coming in v0.2)
-#
-# Data volume: ./data/  (workspace, SQLite DB)
-# Secrets: ./secrets/   (env files, chmod 600)
-
-x-restart: &restart
-  restart: unless-stopped
+# LocalTaskClaw — Docker Compose (development)
+# Build: docker compose build
+# Run:   docker compose up -d
 
 networks:
   internal:
     driver: bridge
 
-volumes:
-  data:
-    driver: local
-
 services:
 
-  # ─── Core Agent ──────────────────────────────────────────────────────────────
+  # ─── Core Agent + Admin UI ──────────────────────────────────────────────────
   core:
-    <<: *restart
     build:
-      context: ./core
+      context: .
       dockerfile: Dockerfile
     container_name: localtaskclaw-core
+    restart: unless-stopped
     networks: [internal]
     env_file: ./secrets/core.env
     environment:
       WORKSPACE: /data/workspace
       DB_PATH: /data/localtaskclaw.db
+      API_PORT: "11387"
     volumes:
       - ./data:/data
     ports:
-      - "127.0.0.1:8000:8000"   # only localhost — bot talks to it internally
+      - "${LTC_PORT:-11387}:11387"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:11387/health"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 15s
 
-  # ─── Telegram Bot ─────────────────────────────────────────────────────────────
+  # ─── Telegram Bot ───────────────────────────────────────────────────────────
   bot:
-    <<: *restart
     build:
       context: ./bot
       dockerfile: Dockerfile
     container_name: localtaskclaw-bot
+    restart: unless-stopped
     networks: [internal]
     env_file: ./secrets/bot.env
     environment:
-      CORE_URL: http://core:8000
+      CORE_URL: http://core:11387
     depends_on:
       core:
         condition: service_healthy

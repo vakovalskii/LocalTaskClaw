@@ -475,84 +475,96 @@ read -r CONFIRM </dev/tty; CONFIRM="${CONFIRM:-Y}"
 
 if [[ "$MODE_NAME" == "docker" ]]; then
   INSTALL_DIR="$HOME/localtaskclaw"
-  mkdir -p "$INSTALL_DIR/secrets" "$INSTALL_DIR/workspace" "$INSTALL_DIR/data"
+  mkdir -p "$INSTALL_DIR/secrets" "$INSTALL_DIR/data"
 
   API_SECRET=$(generate_secret)
 
-  write_secret "$INSTALL_DIR/secrets/bot_token.txt"    "$TG_TOKEN"
-  write_secret "$INSTALL_DIR/secrets/owner_id.txt"     "$OWNER_ID"
-  write_secret "$INSTALL_DIR/secrets/api_secret.txt"   "$API_SECRET"
-  write_secret "$INSTALL_DIR/secrets/llm_api_key.txt"  "$LLM_API_KEY"
-  [[ -n "$BRAVE_KEY" ]] && write_secret "$INSTALL_DIR/secrets/brave_api_key.txt" "$BRAVE_KEY"
+  # Clone repo for building images
+  if [[ -d "$INSTALL_DIR/app/.git" ]]; then
+    info "Обновляю код..."
+    git -C "$INSTALL_DIR/app" pull --rebase --quiet
+  else
+    info "Клонирую репозиторий..."
+    spinner_start "git clone..."
+    if ! git clone --quiet "$REPO_URL" "$INSTALL_DIR/app" > /tmp/localtaskclaw_clone.log 2>&1; then
+      spinner_stop; error "Ошибка клонирования:"; tail -5 /tmp/localtaskclaw_clone.log; exit 1
+    fi
+    spinner_stop; success "Код скачан"
+  fi
+
+  # Write secrets as env files
+  cat > "$INSTALL_DIR/secrets/core.env" << ENV
+MODEL=${MODEL_NAME}
+LLM_BASE_URL=${LLM_BASE_URL}
+LLM_API_KEY=${LLM_API_KEY}
+BOT_TOKEN=${TG_TOKEN}
+OWNER_ID=${OWNER_ID}
+API_SECRET=${API_SECRET}
+WORKSPACE=/data/workspace
+DB_PATH=/data/localtaskclaw.db
+BRAVE_API_KEY=${BRAVE_KEY:-}
+MAX_ITERATIONS=20
+COMMAND_TIMEOUT=60
+MAX_TOKENS=4096
+API_PORT=11387
+ENV
+  chmod 600 "$INSTALL_DIR/secrets/core.env"
+
+  cat > "$INSTALL_DIR/secrets/bot.env" << ENV
+CORE_URL=http://core:11387
+BOT_TOKEN=${TG_TOKEN}
+API_SECRET=${API_SECRET}
+OWNER_ID=${OWNER_ID}
+ENV
+  chmod 600 "$INSTALL_DIR/secrets/bot.env"
+
+  # Also save api_secret standalone for ltc CLI
+  write_secret "$INSTALL_DIR/secrets/api_secret.txt" "$API_SECRET"
 
   cat > "$INSTALL_DIR/docker-compose.yml" << COMPOSE
 services:
   core:
-    image: ghcr.io/vakovalskii/localtaskclaw-core:latest
+    build:
+      context: ./app
+      dockerfile: Dockerfile
     container_name: localtaskclaw-core
     restart: unless-stopped
-    ports:
-      - "11387:8000"
+    env_file: ./secrets/core.env
     environment:
-      - MODEL=${MODEL_NAME}
-      - LLM_BASE_URL=${LLM_BASE_URL}
-      - LLM_API_KEY_FILE=/run/secrets/llm_api_key
-      - BOT_TOKEN_FILE=/run/secrets/bot_token
-      - OWNER_ID=${OWNER_ID}
-      - API_SECRET_FILE=/run/secrets/api_secret
-      - WORKSPACE=/workspace
-      - DB_PATH=/data/localtaskclaw.db
-      - BRAVE_API_KEY_FILE=/run/secrets/brave_api_key
-      - MAX_ITERATIONS=20
-      - COMMAND_TIMEOUT=60
-    secrets:
-      - bot_token
-      - api_secret
-      - llm_api_key
-      - brave_api_key
+      WORKSPACE: /data/workspace
+      DB_PATH: /data/localtaskclaw.db
+      API_PORT: "11387"
     volumes:
-      - ./workspace:/workspace
       - ./data:/data
+    ports:
+      - "11387:11387"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:11387/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
       start_period: 20s
 
   bot:
-    image: ghcr.io/vakovalskii/localtaskclaw-bot:latest
+    build:
+      context: ./app/bot
+      dockerfile: Dockerfile
     container_name: localtaskclaw-bot
     restart: unless-stopped
+    env_file: ./secrets/bot.env
+    environment:
+      CORE_URL: http://core:11387
     depends_on:
       core:
         condition: service_healthy
-    environment:
-      - CORE_URL=http://core:8000
-      - BOT_TOKEN_FILE=/run/secrets/bot_token
-      - API_SECRET_FILE=/run/secrets/api_secret
-      - OWNER_ID=${OWNER_ID}
-    secrets:
-      - bot_token
-      - api_secret
-
-secrets:
-  bot_token:
-    file: ./secrets/bot_token.txt
-  api_secret:
-    file: ./secrets/api_secret.txt
-  llm_api_key:
-    file: ./secrets/llm_api_key.txt
-  brave_api_key:
-    file: ./secrets/${BRAVE_KEY:+brave_api_key.txt}${BRAVE_KEY:-api_secret.txt}
 COMPOSE
 
   success "Конфиг: ${BOLD}$INSTALL_DIR${NC}"
 
-  info "Запускаю контейнеры..."
+  info "Собираю и запускаю контейнеры..."
   cd "$INSTALL_DIR"
-  spinner_start "docker compose up -d..."
-  if ! $COMPOSE_CMD up -d > /tmp/localtaskclaw_up.log 2>&1; then
+  spinner_start "docker compose build + up..."
+  if ! $COMPOSE_CMD up -d --build > /tmp/localtaskclaw_up.log 2>&1; then
     spinner_stop
     error "Ошибка запуска:"; tail -20 /tmp/localtaskclaw_up.log; exit 1
   fi
@@ -571,9 +583,9 @@ COMPOSE
   [[ "$HEALTHY" == "true" ]] && success "Сервис готов!" || warn "Сервис ещё загружается..."
 
   ADMIN_URL="http://localhost:11387/admin"
-  MANAGE_INFO="Логи:    ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml logs -f${NC}
-Стоп:    ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml down${NC}
-Обновить: ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml pull && $COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml up -d${NC}"
+  MANAGE_INFO="Логи:    ${BOLD}ltc logs${NC}
+Стоп:    ${BOLD}ltc stop${NC}
+Обновить: ${BOLD}ltc update${NC}"
 
 fi
 
@@ -583,13 +595,8 @@ fi
 
 if [[ "$MODE_NAME" == "native" || "$MODE_NAME" == "restricted" ]]; then
 
-  if [[ "$MODE_NAME" == "restricted" ]]; then
-    WORKSPACE_DIR="$HOME/.localtaskclaw/workspace"
-    INSTALL_DIR="$HOME/.localtaskclaw"
-  else
-    WORKSPACE_DIR="$HOME/.localtaskclaw/workspace"
-    INSTALL_DIR="$HOME/localtaskclaw"
-  fi
+  INSTALL_DIR="$HOME/.localtaskclaw"
+  WORKSPACE_DIR="$INSTALL_DIR/workspace"
   DB_PATH="$HOME/.localtaskclaw/localtaskclaw.db"
   VENV_DIR="$INSTALL_DIR/venv"
   CODE_DIR="$INSTALL_DIR/app"
@@ -811,17 +818,9 @@ SVC
 
   ADMIN_URL="http://localhost:11387/admin"
 
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    MANAGE_INFO="Логи core: ${BOLD}tail -f /tmp/localtaskclaw-core.log${NC}
-Логи bot:  ${BOLD}tail -f /tmp/localtaskclaw-bot.log${NC}
-Стоп:      ${BOLD}launchctl unload ~/Library/LaunchAgents/io.localtaskclaw.*.plist${NC}
-Старт:     ${BOLD}launchctl load ~/Library/LaunchAgents/io.localtaskclaw.*.plist${NC}"
-  else
-    MANAGE_INFO="Логи core: ${BOLD}tail -f /tmp/localtaskclaw-core.log${NC}
-Логи bot:  ${BOLD}tail -f /tmp/localtaskclaw-bot.log${NC}
-Стоп:      ${BOLD}systemctl --user stop localtaskclaw-core localtaskclaw-bot${NC}
-Старт:     ${BOLD}systemctl --user start localtaskclaw-core localtaskclaw-bot${NC}"
-  fi
+  MANAGE_INFO="Логи:    ${BOLD}ltc logs${NC}
+Стоп:    ${BOLD}ltc stop${NC}
+Обновить: ${BOLD}ltc update${NC}"
 
 fi
 
@@ -850,15 +849,6 @@ info "Открой в браузере: ${BOLD}${ADMIN_URL}${NC}"
 info "Используй API Secret как пароль для входа в UI"
 echo ""
 echo -e "${BOLD}${CYAN}  Полезные команды:${NC}"
-if [[ "$MODE_NAME" == "docker" ]]; then
-  echo -e "  Статус:   ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml ps${NC}"
-  echo -e "  Логи:     ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml logs -f${NC}"
-  echo -e "  Стоп:     ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml down${NC}"
-  echo -e "  Старт:    ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml up -d${NC}"
-  echo -e "  Обновить: ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml pull && $COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml up -d${NC}"
-else
-  :  # ltc handles all platforms
-fi
 
 # Install ltc CLI
 chmod +x "$CODE_DIR/ltc"

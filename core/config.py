@@ -53,7 +53,7 @@ class Config:
     db_path: str = field(default_factory=lambda: _env("DB_PATH", "/data/localtaskclaw.db"))
 
     # API
-    api_port: int = field(default_factory=lambda: _env_int("API_PORT", 8000))
+    api_port: int = field(default_factory=lambda: _env_int("API_PORT", 11387))
     api_secret: str = field(default_factory=lambda: _env("API_SECRET", ""))
 
     # Features
