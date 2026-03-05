@@ -856,18 +856,38 @@ if [[ "$MODE_NAME" == "docker" ]]; then
   echo -e "  Стоп:     ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml down${NC}"
   echo -e "  Старт:    ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml up -d${NC}"
   echo -e "  Обновить: ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml pull && $COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml up -d${NC}"
-elif [[ "$(uname -s)" == "Darwin" ]]; then
-  echo -e "  Стоп:     ${BOLD}launchctl unload ~/Library/LaunchAgents/io.localtaskclaw.*.plist${NC}"
-  echo -e "  Старт:    ${BOLD}launchctl load ~/Library/LaunchAgents/io.localtaskclaw.*.plist${NC}"
-  echo -e "  Логи:     ${BOLD}tail -f /tmp/localtaskclaw-core.log${NC}"
 else
-  echo -e "  Стоп:     ${BOLD}systemctl --user stop localtaskclaw-core localtaskclaw-bot${NC}"
-  echo -e "  Старт:    ${BOLD}systemctl --user start localtaskclaw-core localtaskclaw-bot${NC}"
-  echo -e "  Статус:   ${BOLD}systemctl --user status localtaskclaw-core localtaskclaw-bot${NC}"
-  echo -e "  Логи:     ${BOLD}tail -f /tmp/localtaskclaw-core.log${NC}"
+  :  # ltc handles all platforms
 fi
-echo -e "  Admin UI: ${BOLD}${ADMIN_URL}${NC}  (пароль: API Secret выше)"
-echo -e "  ${RED}Удалить:${NC}  ${BOLD}bash ~/.localtaskclaw/app/uninstall.sh${NC}"
+
+# Install ltc CLI
+chmod +x "$CODE_DIR/ltc"
+mkdir -p "$HOME/bin"
+ln -sf "$CODE_DIR/ltc" "$HOME/bin/ltc"
+# Add ~/bin to PATH if not already there
+if ! echo "$PATH" | grep -q "$HOME/bin"; then
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    if [[ -f "$rc" ]] && ! grep -q 'HOME/bin' "$rc"; then
+      echo 'export PATH="$HOME/bin:$PATH"' >> "$rc"
+    fi
+  done
+  export PATH="$HOME/bin:$PATH"
+fi
+
+echo -e "  ${GREEN}ltc${NC} CLI installed. Commands:"
+echo ""
+echo -e "  ${BOLD}ltc status${NC}       Check if services are running"
+echo -e "  ${BOLD}ltc stop${NC}         Stop services"
+echo -e "  ${BOLD}ltc start${NC}        Start services"
+echo -e "  ${BOLD}ltc restart${NC}      Restart services"
+echo -e "  ${BOLD}ltc logs${NC}         Tail core logs"
+echo -e "  ${BOLD}ltc test${NC}         Run tests"
+echo -e "  ${BOLD}ltc seed${NC}         Load demo kanban board"
+echo -e "  ${BOLD}ltc update${NC}       Update to latest version"
+echo -e "  ${BOLD}ltc open${NC}         Open admin UI in browser"
+echo -e "  ${BOLD}ltc uninstall${NC}    Remove everything"
+echo ""
+echo -e "  Admin UI: ${BOLD}${ADMIN_URL}${NC}  (password: API Secret above)"
 echo ""
 
 # ── Предложение запустить демо канбан ──
