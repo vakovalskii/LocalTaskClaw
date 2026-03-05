@@ -466,7 +466,7 @@ def _get_local_version() -> dict:
 
 
 @app.get("/version")
-async def get_version(_=Depends(_check_auth)):
+async def get_version():
     """Return current local version and check GitHub for latest."""
     local = _get_local_version()
     remote = {"hash": "", "short": "", "date": "", "message": ""}

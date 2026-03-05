@@ -2264,7 +2264,7 @@ async function checkVersion() {
   vstatus.textContent = 'checking...';
   vstatus.style.color = 'var(--text3)';
   try {
-    const d = await api('GET', '/version');
+    const d = await fetch(API + '/version').then(r => r.json());
     document.getElementById('v-local').textContent = d.local.short || '—';
     document.getElementById('v-local-msg').textContent = d.local.message || '';
 
