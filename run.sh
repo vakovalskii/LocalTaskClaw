@@ -88,6 +88,9 @@ sleep 0.5
 set -a; source "$SECRETS"; set +a
 PORT="${API_PORT:-8000}"
 
+# Free port if occupied
+lsof -ti:"$PORT" | xargs kill -9 2>/dev/null || true
+
 # Start core
 info "Запускаю core на порту $PORT..."
 ENV_FILE="$SECRETS" \
