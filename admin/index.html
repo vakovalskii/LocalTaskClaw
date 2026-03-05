@@ -138,10 +138,11 @@
   #messages {
     flex: 1;
     overflow-y: auto;
-    padding: 20px 24px;
+    padding: 20px 0;
     display: flex;
     flex-direction: column;
     gap: 16px;
+    align-items: center;
     scrollbar-width: thin;
     scrollbar-color: var(--border2) transparent;
   }
@@ -150,7 +151,10 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    max-width: 820px;
+    width: 100%;
+    max-width: 760px;
+    padding: 0 24px;
+    box-sizing: border-box;
   }
 
   .msg-label {
@@ -261,7 +265,11 @@
     display: flex;
     gap: 10px;
     align-items: flex-end;
+    justify-content: center;
   }
+
+  #chat-input-wrap > * { flex-shrink: 0; }
+  #chat-input-wrap textarea { flex: 1 1 auto; max-width: 760px; min-width: 0; }
 
   #chat-input {
     flex: 1;
@@ -442,6 +450,13 @@
 
   .badge.on { background: #0d1f17; color: var(--green); }
   .badge.off { background: #1a1a1a; color: var(--text3); }
+
+  /* Log lines */
+  .log-line { white-space: pre-wrap; word-break: break-all; padding: 1px 0; }
+  .log-err { color: #ff6b6b; }
+  .log-warn { color: var(--amber); }
+  .log-info { color: var(--text2); }
+  .log-dbg { color: var(--text3); }
 
   /* Task form */
   .form-grid {
@@ -633,6 +648,7 @@
     <a href="#sessions" class="nav-link">⬡ SESSIONS</a>
     <a href="#tasks" class="nav-link">⬡ TASKS</a>
     <a href="#files" class="nav-link">⬡ FILES</a>
+    <a href="#logs" class="nav-link">⬡ LOGS</a>
     <a href="#settings" class="nav-link">⬡ SETTINGS</a>
   </nav>
 </div>
@@ -711,6 +727,21 @@
     </div>
   </div>
 
+  <!-- LOGS -->
+  <div id="page-logs" class="page" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <div class="section-title" style="margin:0;">LOGS</div>
+      <select id="log-source" style="background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:4px 8px;font-family:inherit;font-size:11px;cursor:pointer;">
+        <option value="core">core</option>
+        <option value="bot">bot</option>
+      </select>
+      <button class="btn btn-ghost" id="log-clear-btn" style="height:28px;padding:0 10px;font-size:10px;margin-left:auto;">CLEAR</button>
+      <button class="btn btn-ghost" id="log-pause-btn" style="height:28px;padding:0 10px;font-size:10px;">PAUSE</button>
+      <span id="log-status" style="font-size:10px;color:var(--text3);margin-left:4px;">● connecting...</span>
+    </div>
+    <div id="log-output" style="flex:1;overflow-y:auto;padding:12px 16px;font-size:11px;line-height:1.6;font-family:'JetBrains Mono',monospace;"></div>
+  </div>
+
   <!-- SETTINGS -->
   <div id="page-settings" class="page" style="padding:32px;overflow-y:auto;gap:24px;">
     <div>
@@ -772,8 +803,9 @@
         </div>
       </div>
     </div>
-    <div style="margin-top:8px;display:flex;gap:10px;">
-      <button class="btn" id="settings-save-btn">SAVE & APPLY</button>
+    <div style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <button class="btn" id="settings-save-btn">SAVE</button>
+      <button class="btn btn-ghost" id="settings-restart-btn" style="color:var(--amber);border-color:var(--amber);">RESTART CORE</button>
       <span id="settings-status" style="display:flex;align-items:center;font-size:11px;color:var(--text3);"></span>
     </div>
   </div>
@@ -845,6 +877,7 @@ const pages = {
   sessions: document.getElementById('page-sessions'),
   tasks: document.getElementById('page-tasks'),
   files: document.getElementById('page-files'),
+  logs: document.getElementById('page-logs'),
   settings: document.getElementById('page-settings'),
 };
 
@@ -852,13 +885,17 @@ function navigate(hash) {
   const page = hash.replace('#', '') || 'chat';
   Object.entries(pages).forEach(([k, el]) => {
     el.classList.toggle('active', k === page);
+    // logs page has display:none inline in HTML, needs explicit override
+    if (k === 'logs') el.style.display = (k === page) ? 'flex' : 'none';
   });
   document.querySelectorAll('.nav-link').forEach(a => {
     a.classList.toggle('active', a.getAttribute('href') === '#' + page);
   });
+  if (page === 'chat' && !chatHistoryLoaded) loadChatHistory();
   if (page === 'sessions') loadSessions();
   if (page === 'tasks') loadTasks();
   if (page === 'files') loadFiles('');
+  if (page === 'logs') initLogs();
   if (page === 'settings') loadSettings();
 }
 
@@ -888,6 +925,27 @@ const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 
 let isStreaming = false;
+let chatHistoryLoaded = false;
+
+async function loadChatHistory() {
+  try {
+    const d = await api('GET', `/history?chat_id=${CHAT_ID}`);
+    chatHistoryLoaded = true;
+    if (!d.messages || !d.messages.length) return;
+    // Render only user and assistant (with text) messages; skip tool role and empty assistant
+    for (const msg of d.messages) {
+      if (msg.role === 'user' && msg.content) {
+        const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        addMessage('user', text);
+      } else if (msg.role === 'assistant' && msg.content && msg.content !== 'null') {
+        addMessage('assistant', typeof msg.content === 'string' ? msg.content : '');
+      }
+      // skip role='tool' (tool results) and assistant with null content (tool-call-only msgs)
+    }
+  } catch(e) {
+    chatHistoryLoaded = true;
+  }
+}
 
 function addMessage(role, text, toolEvents = []) {
   const div = document.createElement('div');
@@ -980,7 +1038,7 @@ async function sendMessage() {
     const resp = await fetch(API + '/chat', {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({ message: text, chat_id: CHAT_ID, stream: true }),
+      body: JSON.stringify({ message: text, chat_id: CHAT_ID, stream: true, source: 'admin' }),
     });
 
     const reader = resp.body.getReader();
@@ -1006,22 +1064,26 @@ async function sendMessage() {
             fullText += ev.text || '';
             assistantBody.innerHTML = marked.parse(fullText);
           } else if (ev.type === 'tool_start') {
-            // Show tool call in progress
+            // Show tool call in progress — use unique id with counter to handle repeated tools
+            const argsPreview = JSON.stringify(ev.args||{}).slice(0, 60);
             const indicator = document.createElement('div');
             indicator.className = 'tool-event';
-            indicator.id = 'tool-' + ev.name;
+            indicator.dataset.toolName = ev.name;
             indicator.innerHTML = `<div class="tool-event-header">
               <span class="tool-name">${ev.name}</span>
-              <span style="color:var(--text3)">${JSON.stringify(ev.args||{}).slice(0,60)}...</span>
-              <span style="color:var(--amber);font-size:10px;margin-left:auto">⟳ running</span>
+              <span style="color:var(--text3);margin-left:8px;font-size:11px">${argsPreview}</span>
+              <span style="color:var(--amber);font-size:10px;margin-left:auto">⟳ running…</span>
             </div>`;
             assistantDiv.appendChild(indicator);
           } else if (ev.type === 'tool_done') {
             toolEvents.push(ev);
-            const old = document.getElementById('tool-' + ev.name);
-            if (old) old.remove();
+            // Remove running indicator for this tool
+            const indicators = assistantDiv.querySelectorAll(`[data-tool-name="${ev.name}"]`);
+            if (indicators.length) indicators[indicators.length - 1].remove();
           }
-        } catch {}
+        } catch(parseErr) {
+          console.warn('SSE parse error:', parseErr, raw);
+        }
       }
       msgContainer.scrollTop = msgContainer.scrollHeight;
     }
@@ -1311,6 +1373,93 @@ document.getElementById('file-del-btn').addEventListener('click', async () => {
   }
 });
 
+// ── Logs ──────────────────────────────────────────────────────────────────────
+
+let logSse = null;
+let logPaused = false;
+let logSource = 'core';
+
+function logLineClass(line) {
+  if (/ERROR|error|Error/.test(line)) return 'log-err';
+  if (/WARNING|warning|WARN/.test(line)) return 'log-warn';
+  if (/INFO/.test(line)) return 'log-info';
+  if (/DEBUG/.test(line)) return 'log-dbg';
+  return '';
+}
+
+function appendLogLine(line) {
+  if (logPaused) return;
+  const out = document.getElementById('log-output');
+  const el = document.createElement('div');
+  el.className = 'log-line ' + logLineClass(line);
+  el.textContent = line;
+  out.appendChild(el);
+  // Keep at most 2000 lines
+  while (out.children.length > 2000) out.removeChild(out.firstChild);
+  out.scrollTop = out.scrollHeight;
+}
+
+async function initLogs() {
+  const src = document.getElementById('log-source').value;
+  if (logSse && logSource === src) return; // Already streaming this source
+  startLogStream(src);
+}
+
+async function startLogStream(src) {
+  logSource = src;
+  // Disconnect previous SSE
+  if (logSse) { logSse.close(); logSse = null; }
+
+  const out = document.getElementById('log-output');
+  const status = document.getElementById('log-status');
+  out.innerHTML = '';
+  status.textContent = '● loading...';
+  status.style.color = 'var(--amber)';
+
+  // Load tail first
+  try {
+    const d = await api('GET', `/logs/tail?source=${src}&lines=300`);
+    d.lines.forEach(l => appendLogLine(l));
+    out.scrollTop = out.scrollHeight;
+  } catch(e) {
+    appendLogLine('Error loading tail: ' + e.message);
+  }
+
+  // Then stream new lines
+  const url = API + `/logs/stream?source=${src}`;
+  const es = new EventSource(url + (API_KEY ? `&x_api_key=${encodeURIComponent(API_KEY)}` : ''));
+  logSse = es;
+
+  es.onopen = () => {
+    status.textContent = '● live';
+    status.style.color = 'var(--green)';
+  };
+  es.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.line) appendLogLine(d.line);
+    } catch {}
+  };
+  es.onerror = () => {
+    status.textContent = '● disconnected';
+    status.style.color = 'var(--red)';
+  };
+}
+
+document.getElementById('log-source').addEventListener('change', (e) => {
+  startLogStream(e.target.value);
+});
+
+document.getElementById('log-clear-btn').addEventListener('click', () => {
+  document.getElementById('log-output').innerHTML = '';
+});
+
+document.getElementById('log-pause-btn').addEventListener('click', function() {
+  logPaused = !logPaused;
+  this.textContent = logPaused ? 'RESUME' : 'PAUSE';
+  this.style.color = logPaused ? 'var(--amber)' : '';
+});
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 async function loadSettings() {
@@ -1329,6 +1478,34 @@ async function loadSettings() {
     toast('Settings load error: ' + e.message);
   }
 }
+
+document.getElementById('settings-restart-btn').addEventListener('click', async () => {
+  const status = document.getElementById('settings-status');
+  status.textContent = '⟳ restarting...';
+  status.style.color = 'var(--amber)';
+  try {
+    await api('POST', '/restart');
+    status.textContent = '↻ restarted — reconnecting...';
+    // Poll health until back online
+    let tries = 0;
+    const poll = setInterval(async () => {
+      tries++;
+      try {
+        await fetch(API + '/health').then(r => r.json());
+        clearInterval(poll);
+        status.textContent = '✓ core back online';
+        status.style.color = 'var(--green)';
+        loadSettings();
+        setTimeout(() => { status.textContent = ''; }, 3000);
+      } catch {
+        if (tries > 30) { clearInterval(poll); status.textContent = '✗ timeout'; }
+      }
+    }, 1000);
+  } catch(e) {
+    status.textContent = '↻ restarting (process killed)';
+    status.style.color = 'var(--amber)';
+  }
+});
 
 document.getElementById('settings-save-btn').addEventListener('click', async () => {
   const body = {};
@@ -1352,8 +1529,8 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
   status.textContent = 'Saving...';
   try {
     const d = await api('POST', '/settings', body);
-    status.textContent = '✓ Saved. Restart core to apply.';
-    status.style.color = 'var(--green)';
+    status.textContent = '✓ Saved — click RESTART CORE to apply';
+    status.style.color = 'var(--amber)';
     setTimeout(() => { status.textContent = ''; }, 4000);
   } catch(e) {
     status.textContent = '✗ ' + e.message;

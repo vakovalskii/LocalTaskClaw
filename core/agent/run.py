@@ -1,4 +1,4 @@
-"""ReAct Agent — main run_agent() orchestrator."""
+"""ReAct Agent — main run_agent() orchestrator with real token streaming."""
 
 import json
 import asyncio
@@ -6,7 +6,7 @@ from typing import AsyncGenerator
 
 from config import CONFIG
 from logger import agent_logger
-from llm import call_llm, extract_response, estimate_tokens
+from llm import call_llm_stream, estimate_tokens
 from tools import execute_tool, get_tool_definitions
 from models import ToolContext
 from db import log_event
@@ -27,10 +27,9 @@ async def run_agent(
     Run the ReAct agent loop for a single message.
 
     on_event(type, data) — optional callback for streaming events:
-        type="thinking", data={"text": "..."}
+        type="text",       data={"text": "..."}   — incremental text token
         type="tool_start", data={"name": "...", "args": {...}}
-        type="tool_done", data={"name": "...", "result": "...", "success": bool}
-        type="text", data={"text": "..."}
+        type="tool_done",  data={"name": "...", "result": "...", "success": bool}
     """
     session = sessions.get(chat_id)
     cwd = session.cwd
@@ -68,7 +67,6 @@ async def run_agent(
 
     # Context compaction: trim if too large
     while estimate_tokens(messages) > CONFIG.context_limit and len(messages) > 3:
-        # Drop oldest user/assistant pair after system prompt
         if len(messages) > 3:
             messages.pop(1)
             messages.pop(1)
@@ -80,28 +78,35 @@ async def run_agent(
         agent_logger.info(f"[{session_key}] Iteration {iteration + 1}, msgs={len(messages)}")
         log_event(session_key, "iteration_start", {"iteration": iteration + 1})
 
+        # Stream tokens from LLM
+        text = ""
+        tool_calls = []
+
         try:
-            response = await call_llm(messages, tools=tool_definitions)
+            async for chunk in call_llm_stream(messages, tools=tool_definitions):
+                if chunk["type"] == "delta":
+                    token = chunk["text"]
+                    text += token
+                    if on_event:
+                        await on_event("text", {"text": token})
+
+                elif chunk["type"] == "tool_calls":
+                    tool_calls = chunk["tool_calls"]
+
+                elif chunk["type"] == "done":
+                    usage = chunk.get("usage", {})
+                    total_prompt_tokens += usage.get("prompt_tokens", 0)
+                    total_completion_tokens += usage.get("completion_tokens", 0)
+
         except Exception as e:
-            agent_logger.error(f"LLM error: {e}")
+            agent_logger.error(f"LLM stream error: {e}")
             return AgentResult(
                 text=f"Ошибка связи с моделью: {e}",
                 tool_events=tool_events,
             )
 
-        usage = response.get("usage", {})
-        total_prompt_tokens += usage.get("prompt_tokens", 0)
-        total_completion_tokens += usage.get("completion_tokens", 0)
-
-        text, tool_calls = extract_response(response)
-
-        # Emit text chunk
-        if text and on_event:
-            await on_event("text", {"text": text})
-
         # No tool calls → done
         if not tool_calls:
-            # Add assistant message to history
             messages.append({"role": "assistant", "content": text})
             session.history = messages[1:]  # skip system
             sessions.save(chat_id)

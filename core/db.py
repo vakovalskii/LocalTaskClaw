@@ -30,8 +30,11 @@ def init_db():
             session_key TEXT NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
+            full_msg TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        -- Add full_msg column to existing DBs (idempotent)
+        CREATE TABLE IF NOT EXISTS _dummy_migration (id INTEGER);
 
         CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_key);
 
@@ -58,24 +61,44 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_events_session ON agent_events(session_key);
     """)
     conn.commit()
+    # Migrations: add columns added after initial schema
+    try:
+        conn.execute("ALTER TABLE messages ADD COLUMN full_msg TEXT")
+        conn.commit()
+        core_logger.info("DB migration: added full_msg column")
+    except Exception:
+        pass  # Column already exists
     conn.close()
     core_logger.info(f"DB initialized: {CONFIG.db_path}")
 
 
 def save_messages(session_key: str, messages: list):
-    """Persist conversation history for a session."""
+    """Persist full conversation history (role + content + tool_calls + tool_call_id)."""
     conn = get_db()
     try:
-        conn.execute(
-            "DELETE FROM messages WHERE session_key = ?", (session_key,)
-        )
+        # Ensure full_msg column exists (migration for existing DBs)
+        try:
+            conn.execute("ALTER TABLE messages ADD COLUMN full_msg TEXT")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+
+        conn.execute("DELETE FROM messages WHERE session_key = ?", (session_key,))
+        rows = []
+        for m in messages:
+            role = m["role"]
+            content = m.get("content") or ""
+            if isinstance(content, list):
+                content = json.dumps(content)
+            full_msg = json.dumps(m, ensure_ascii=False)
+            rows.append((session_key, role, content, full_msg))
+
         conn.executemany(
-            "INSERT INTO messages (session_key, role, content) VALUES (?, ?, ?)",
-            [(session_key, m["role"], json.dumps(m["content"]) if isinstance(m["content"], list) else m["content"])
-             for m in messages],
+            "INSERT INTO messages (session_key, role, content, full_msg) VALUES (?, ?, ?, ?)",
+            rows,
         )
         conn.execute(
-            "UPDATE sessions SET updated_at = datetime('now') WHERE session_key = ? ",
+            "UPDATE sessions SET updated_at = datetime('now') WHERE session_key = ?",
             (session_key,),
         )
         conn.commit()
@@ -84,15 +107,24 @@ def save_messages(session_key: str, messages: list):
 
 
 def load_messages(session_key: str) -> list:
-    """Load conversation history for a session."""
+    """Load full conversation history including tool_calls and tool_call_id."""
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT role, content FROM messages WHERE session_key = ? ORDER BY id",
+            "SELECT role, content, full_msg FROM messages WHERE session_key = ? ORDER BY id",
             (session_key,),
         ).fetchall()
         result = []
         for row in rows:
+            # Prefer full_msg (complete message dict), fall back to role+content
+            if row["full_msg"]:
+                try:
+                    msg = json.loads(row["full_msg"])
+                    result.append(msg)
+                    continue
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Legacy fallback: reconstruct from role+content
             content = row["content"]
             try:
                 content = json.loads(content)

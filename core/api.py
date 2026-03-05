@@ -3,6 +3,8 @@
 import json
 import os
 import asyncio
+import time
+import httpx
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Query
@@ -55,6 +57,7 @@ class ChatRequest(BaseModel):
     message: str
     chat_id: int = 0
     stream: bool = False
+    source: str = "bot"  # "bot" = came from Telegram bot, "admin" = came from web UI
 
 class ClearRequest(BaseModel):
     chat_id: int = 0
@@ -91,13 +94,16 @@ async def health():
 @app.post("/chat")
 async def chat(req: ChatRequest, _=Depends(_check_auth)):
     chat_id = req.chat_id or CONFIG.owner_id or 0
+    forward = (req.source == "admin")  # only forward admin UI messages to Telegram
     if req.stream:
         return StreamingResponse(
-            _stream_agent(chat_id, req.message),
+            _stream_agent(chat_id, req.message, forward=forward),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
     result = await run_agent(chat_id, req.message)
+    if forward and CONFIG.bot_token and CONFIG.owner_id:
+        asyncio.create_task(_forward_to_telegram(result.text))
     return {
         "text": result.text,
         "tool_events": result.tool_events,
@@ -105,14 +111,14 @@ async def chat(req: ChatRequest, _=Depends(_check_auth)):
     }
 
 
-async def _stream_agent(chat_id: int, message: str) -> AsyncGenerator[str, None]:
+async def _stream_agent(chat_id: int, message: str, forward: bool = False) -> AsyncGenerator[str, None]:
     queue: asyncio.Queue = asyncio.Queue()
 
     async def on_event(event_type: str, data: dict):
         await queue.put((event_type, data))
 
     asyncio.create_task(
-        _run_and_signal(chat_id, message, on_event, queue)
+        _run_and_signal(chat_id, message, on_event, queue, forward=forward)
     )
 
     while True:
@@ -124,11 +130,42 @@ async def _stream_agent(chat_id: int, message: str) -> AsyncGenerator[str, None]
         yield f"data: {json.dumps({'type': event_type, **data}, ensure_ascii=False)}\n\n"
 
 
-async def _run_and_signal(chat_id, message, on_event, queue):
+async def _run_and_signal(chat_id, message, on_event, queue, forward=False):
     try:
-        await run_agent(chat_id, message, on_event=on_event)
+        result = await run_agent(chat_id, message, on_event=on_event)
+        if forward and CONFIG.bot_token and CONFIG.owner_id:
+            asyncio.create_task(_forward_to_telegram(result.text))
     finally:
         await queue.put(None)
+
+
+async def _forward_to_telegram(text: str):
+    """Send agent response to owner via Telegram bot API (fire-and-forget)."""
+    if not text or not CONFIG.bot_token or not CONFIG.owner_id:
+        return
+    url = f"https://api.telegram.org/bot{CONFIG.bot_token}/sendMessage"
+    # Split if needed (Telegram limit 4096)
+    max_len = 4000
+    chunks = []
+    while text:
+        if len(text) <= max_len:
+            chunks.append(text)
+            break
+        split_at = text.rfind("\n", 0, max_len)
+        if split_at < max_len // 2:
+            split_at = max_len
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip("\n")
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            for chunk in chunks:
+                await client.post(url, json={
+                    "chat_id": CONFIG.owner_id,
+                    "text": chunk,
+                })
+    except Exception as e:
+        core_logger.warning(f"Failed to forward to Telegram: {e}")
 
 
 @app.post("/clear")
@@ -318,3 +355,81 @@ async def update_settings(req: SettingsRequest, _=Depends(_check_auth)):
         f.writelines(new_lines)
 
     return {"status": "saved", "updated": list(updated), "note": "Restart core to apply changes"}
+
+
+@app.post("/restart")
+async def restart_core(_=Depends(_check_auth)):
+    """Restart the core process by replacing the current process with a fresh one."""
+    import sys
+    import signal
+    core_logger.info("Restart requested via admin UI")
+    # Schedule a SIGTERM after responding — uvicorn will restart if supervisor is watching
+    asyncio.get_event_loop().call_later(0.5, lambda: os.kill(os.getpid(), signal.SIGTERM))
+    return {"status": "restarting"}
+
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+
+_LOG_FILES = {
+    "core": "/tmp/localclaw-core.log",
+    "bot": "/tmp/localclaw-bot.log",
+}
+
+
+@app.get("/logs/tail")
+async def tail_logs(source: str = "core", lines: int = 200, _=Depends(_check_auth)):
+    """Return last N lines from a log file."""
+    log_path = _LOG_FILES.get(source)
+    if not log_path:
+        raise HTTPException(status_code=400, detail=f"Unknown source: {source}. Use: {list(_LOG_FILES)}")
+    if not os.path.exists(log_path):
+        return {"lines": [], "source": source}
+    with open(log_path, errors="replace") as f:
+        all_lines = f.readlines()
+    return {"lines": [l.rstrip("\n") for l in all_lines[-lines:]], "source": source}
+
+
+@app.get("/logs/stream")
+async def stream_logs(source: str = "core", key: str = Query(default=""), x_api_key: str = Header(default="")):
+    """SSE stream — tail -f a log file. Accepts key via query param (EventSource can't set headers)."""
+    # Accept API key from either header or query param
+    provided = key or x_api_key
+    if CONFIG.api_secret and provided != CONFIG.api_secret:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    log_path = _LOG_FILES.get(source)
+    if not log_path:
+        raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
+
+    return StreamingResponse(
+        _tail_log_sse(log_path),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _tail_log_sse(log_path: str) -> AsyncGenerator[str, None]:
+    """Yield SSE events for new lines appended to log_path."""
+    # Seek to end first — only stream new lines
+    try:
+        pos = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+    except OSError:
+        pos = 0
+
+    while True:
+        await asyncio.sleep(0.5)
+        try:
+            if not os.path.exists(log_path):
+                continue
+            size = os.path.getsize(log_path)
+            if size < pos:
+                pos = 0  # Log rotated
+            if size > pos:
+                with open(log_path, errors="replace") as f:
+                    f.seek(pos)
+                    new_data = f.read(size - pos)
+                pos = size
+                for line in new_data.splitlines():
+                    if line.strip():
+                        yield f"data: {json.dumps({'line': line}, ensure_ascii=False)}\n\n"
+        except OSError:
+            pass
