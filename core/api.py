@@ -48,10 +48,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve admin UI at /admin
+# Serve admin UI at /admin (React SPA with client-side routing)
 _admin_dir = os.path.join(os.path.dirname(__file__), "..", "admin")
+_admin_index = os.path.join(_admin_dir, "index.html")
 if os.path.isdir(_admin_dir):
-    app.mount("/admin", StaticFiles(directory=_admin_dir, html=True), name="admin")
+    # Static assets (JS, CSS)
+    app.mount("/admin/assets", StaticFiles(directory=os.path.join(_admin_dir, "assets")), name="admin-assets")
+
+    @app.get("/admin/{full_path:path}")
+    async def admin_spa(full_path: str = ""):
+        """SPA fallback: serve index.html for all /admin/* routes."""
+        # If requesting a real file, serve it
+        file_path = os.path.join(_admin_dir, full_path)
+        if full_path and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(_admin_index)
 
 
 def _check_auth(x_api_key: str = Header(default="")):

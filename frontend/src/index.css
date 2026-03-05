@@ -1,0 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0c0c0c;
+  color: #d4c5a0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2e2e2e; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #534d42; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.6); }
+}
+
+.animate-pulse-slow { animation: pulse 2s ease-in-out infinite; }
+.animate-blink { animation: blink 0.8s step-end infinite; }
+.animate-blink-slow { animation: blink 1s infinite; }
+.animate-pulse-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
+
+.streaming-cursor::after {
+  content: '\25CB';
+  color: #f59e0b;
+  animation: blink 0.8s step-end infinite;
+}
+
+@keyframes slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-slide-in { animation: slide-in 0.2s ease-out; }

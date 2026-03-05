@@ -44,13 +44,26 @@ else
 fi
 
 # 2. Update dependencies if requirements changed
-log "[2/3] Checking dependencies..."
+log "[2/4] Checking dependencies..."
 if [[ -f "$CODE_DIR/requirements.txt" && -d "$VENV_DIR" ]]; then
   "$VENV_DIR/bin/pip" install -q -r "$CODE_DIR/requirements.txt" 2>/dev/null || true
 fi
 
-# 3. Restart services
-log "[3/3] Restarting services..."
+# 3. Rebuild frontend if it exists
+log "[3/4] Building frontend..."
+if [[ -f "$CODE_DIR/frontend/package.json" ]]; then
+  if command -v npm &>/dev/null; then
+    cd "$CODE_DIR/frontend"
+    npm install --silent 2>/dev/null || true
+    npm run build 2>/dev/null || log "${YELLOW}Frontend build failed — using existing admin/${NC}"
+    cd "$CODE_DIR"
+  else
+    log "${YELLOW}npm not found — skipping frontend build${NC}"
+  fi
+fi
+
+# 4. Restart services
+log "[4/4] Restarting services..."
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   LAUNCH_DIR="$HOME/Library/LaunchAgents"

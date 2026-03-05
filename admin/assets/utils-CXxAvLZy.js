@@ -1,0 +1,1 @@
+function r(e){return e?new Date(e.includes("T")?e:e+"Z").toLocaleTimeString():"—"}function t(e){return e?e<1024?e+"B":e<1024*1024?(e/1024).toFixed(1)+"K":(e/1024/1024).toFixed(1)+"M":""}export{t as a,r as f};
