@@ -86,7 +86,8 @@ async def run_agent(
             break
 
     # ReAct loop
-    for iteration in range(CONFIG.max_iterations):
+    max_iter = CONFIG.max_iterations * 2 if task_mode else CONFIG.max_iterations
+    for iteration in range(max_iter):
         agent_logger.info(f"[{session_key}] Iteration {iteration + 1}, msgs={len(messages)}")
         log_event(session_key, "iteration_start", {"iteration": iteration + 1})
 
@@ -198,7 +199,7 @@ async def run_agent(
         messages.extend(tool_results_msgs)
 
     # Max iterations reached
-    agent_logger.warning(f"[{session_key}] Max iterations ({CONFIG.max_iterations}) reached")
+    agent_logger.warning(f"[{session_key}] Max iterations ({max_iter}) reached")
     final_text = text or "Достигнут лимит шагов. Попробуй переформулировать задачу."
     session.history = messages[1:]
     sessions.save(chat_id)
