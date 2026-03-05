@@ -1029,11 +1029,14 @@ function SpawnModal({
           try {
             const evt = JSON.parse(raw);
             if (evt.type === 'text') {
-              setLog(prev => [...prev, evt.content]);
+              const text = evt.text || evt.content || '';
+              if (text.trim()) setLog(prev => [...prev, text]);
             } else if (evt.type === 'tool_start') {
               setLog(prev => [...prev, `[tool] ${evt.name}...`]);
-            } else if (evt.type === 'tool_end') {
-              setLog(prev => [...prev, `[tool] ${evt.name} done`]);
+            } else if (evt.type === 'tool_done') {
+              const ok = evt.success !== false;
+              const short = (evt.result || '').slice(0, 100);
+              setLog(prev => [...prev, `[${ok ? 'ok' : 'err'}] ${evt.name}: ${short}`]);
             } else if (evt.type === 'done') {
               if (evt.board_id) setBoardId(evt.board_id);
               setLog(prev => [...prev, '[done] Project spawned successfully']);
@@ -1097,9 +1100,10 @@ function SpawnModal({
             <div ref={logRef} className="bg-bg2 border border-border p-3 max-h-56 overflow-y-auto">
               {log.map((line, i) => (
                 <div key={i} className={`text-[10px] leading-relaxed font-mono ${
-                  line.startsWith('[error]') ? 'text-red' :
+                  line.startsWith('[error]') || line.startsWith('[err]') ? 'text-red' :
                   line.startsWith('[tool]') ? 'text-blue' :
-                  line.startsWith('[done]') ? 'text-green' :
+                  line.startsWith('[ok]') ? 'text-green' :
+                  line.startsWith('[done]') ? 'text-green font-bold' :
                   'text-text2'
                 }`}>{line}</div>
               ))}
