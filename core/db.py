@@ -59,6 +59,30 @@ def init_db():
         );
 
         CREATE INDEX IF NOT EXISTS idx_events_session ON agent_events(session_key);
+
+        CREATE TABLE IF NOT EXISTS agents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#f59e0b',
+            emoji TEXT NOT NULL DEFAULT '🤖',
+            system_prompt TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS kanban_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+            column TEXT NOT NULL DEFAULT 'backlog',
+            position INTEGER NOT NULL DEFAULT 0,
+            artifact TEXT,
+            status TEXT NOT NULL DEFAULT 'idle',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_kanban_column ON kanban_tasks(column);
     """)
     conn.commit()
     # Migrations: add columns added after initial schema
@@ -180,6 +204,126 @@ def update_task_last_run(task_id: int, next_run: str):
             "UPDATE scheduled_tasks SET last_run = datetime('now'), next_run = ? WHERE id = ?",
             (next_run, task_id),
         )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Agents (kanban identities) ────────────────────────────────────────────────
+
+def get_agents() -> list:
+    conn = get_db()
+    try:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM agents ORDER BY id"
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def create_agent(name: str, color: str, emoji: str, system_prompt: str) -> dict:
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "INSERT INTO agents (name, color, emoji, system_prompt) VALUES (?, ?, ?, ?)",
+            (name, color, emoji, system_prompt),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM agents WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def update_agent(agent_id: int, **fields) -> dict | None:
+    allowed = {"name", "color", "emoji", "system_prompt"}
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        return None
+    conn = get_db()
+    try:
+        sets = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(f"UPDATE agents SET {sets} WHERE id = ?", (*updates.values(), agent_id))
+        conn.commit()
+        row = conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def delete_agent(agent_id: int):
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Kanban tasks ──────────────────────────────────────────────────────────────
+
+def get_kanban_tasks() -> list:
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT kt.*, a.name as agent_name, a.color as agent_color, a.emoji as agent_emoji
+            FROM kanban_tasks kt
+            LEFT JOIN agents a ON kt.agent_id = a.id
+            ORDER BY kt.column, kt.position, kt.id
+        """).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def create_kanban_task(title: str, description: str, agent_id: int | None, column: str = "backlog") -> dict:
+    conn = get_db()
+    try:
+        pos = conn.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM kanban_tasks WHERE column = ?", (column,)
+        ).fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO kanban_tasks (title, description, agent_id, column, position) VALUES (?, ?, ?, ?, ?)",
+            (title, description, agent_id, column, pos),
+        )
+        conn.commit()
+        row = conn.execute("""
+            SELECT kt.*, a.name as agent_name, a.color as agent_color, a.emoji as agent_emoji
+            FROM kanban_tasks kt LEFT JOIN agents a ON kt.agent_id = a.id
+            WHERE kt.id = ?
+        """, (cur.lastrowid,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def update_kanban_task(task_id: int, **fields) -> dict | None:
+    allowed = {"title", "description", "agent_id", "column", "position", "artifact", "status"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return None
+    conn = get_db()
+    try:
+        updates["updated_at"] = "datetime('now')"
+        # updated_at is a SQL expression, handle separately
+        reg = {k: v for k, v in updates.items() if k != "updated_at"}
+        sets = ", ".join(f"{k} = ?" for k in reg) + ", updated_at = datetime('now')"
+        conn.execute(f"UPDATE kanban_tasks SET {sets} WHERE id = ?", (*reg.values(), task_id))
+        conn.commit()
+        row = conn.execute("""
+            SELECT kt.*, a.name as agent_name, a.color as agent_color, a.emoji as agent_emoji
+            FROM kanban_tasks kt LEFT JOIN agents a ON kt.agent_id = a.id
+            WHERE kt.id = ?
+        """, (task_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def delete_kanban_task(task_id: int):
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM kanban_tasks WHERE id = ?", (task_id,))
         conn.commit()
     finally:
         conn.close()

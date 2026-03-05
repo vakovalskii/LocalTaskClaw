@@ -17,7 +17,11 @@ from config import CONFIG
 from logger import core_logger
 from agent.run import run_agent
 from agent.session import sessions
-from db import get_db, get_scheduled_tasks
+from db import (
+    get_db, get_scheduled_tasks,
+    get_agents, create_agent, update_agent, delete_agent,
+    get_kanban_tasks, create_kanban_task, update_kanban_task, delete_kanban_task,
+)
 
 app = FastAPI(title="LocalTaskClaw Core", version="0.1.0")
 
@@ -80,6 +84,35 @@ class SettingsRequest(BaseModel):
     memory_enabled: bool | None = None
     max_iterations: int | None = None
     command_timeout: int | None = None
+
+class AgentCreateRequest(BaseModel):
+    name: str
+    color: str = "#f59e0b"
+    emoji: str = "🤖"
+    system_prompt: str = ""
+
+class AgentUpdateRequest(BaseModel):
+    name: str | None = None
+    color: str | None = None
+    emoji: str | None = None
+    system_prompt: str | None = None
+
+class KanbanTaskCreateRequest(BaseModel):
+    title: str
+    description: str = ""
+    agent_id: int | None = None
+    column: str = "backlog"
+
+class KanbanTaskUpdateRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    agent_id: int | None = None
+    column: str | None = None
+    position: int | None = None
+
+class KanbanTaskMoveRequest(BaseModel):
+    column: str
+    position: int | None = None
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -409,7 +442,6 @@ async def stream_logs(source: str = "core", key: str = Query(default=""), x_api_
 
 async def _tail_log_sse(log_path: str) -> AsyncGenerator[str, None]:
     """Yield SSE events for new lines appended to log_path."""
-    # Seek to end first — only stream new lines
     try:
         pos = os.path.getsize(log_path) if os.path.exists(log_path) else 0
     except OSError:
@@ -433,3 +465,127 @@ async def _tail_log_sse(log_path: str) -> AsyncGenerator[str, None]:
                         yield f"data: {json.dumps({'line': line}, ensure_ascii=False)}\n\n"
         except OSError:
             pass
+
+
+# ── Agents ────────────────────────────────────────────────────────────────────
+
+@app.get("/agents")
+async def list_agents(_=Depends(_check_auth)):
+    return {"agents": get_agents()}
+
+
+@app.post("/agents")
+async def create_agent_endpoint(req: AgentCreateRequest, _=Depends(_check_auth)):
+    agents = get_agents()
+    if len(agents) >= 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 agents allowed")
+    agent = create_agent(req.name, req.color, req.emoji, req.system_prompt)
+    return agent
+
+
+@app.patch("/agents/{agent_id}")
+async def update_agent_endpoint(agent_id: int, req: AgentUpdateRequest, _=Depends(_check_auth)):
+    updated = update_agent(agent_id, **req.model_dump(exclude_none=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return updated
+
+
+@app.delete("/agents/{agent_id}")
+async def delete_agent_endpoint(agent_id: int, _=Depends(_check_auth)):
+    delete_agent(agent_id)
+    return {"status": "deleted"}
+
+
+# ── Kanban ────────────────────────────────────────────────────────────────────
+
+@app.get("/kanban")
+async def list_kanban(_=Depends(_check_auth)):
+    return {"tasks": get_kanban_tasks()}
+
+
+@app.post("/kanban/tasks")
+async def create_kanban_task_endpoint(req: KanbanTaskCreateRequest, _=Depends(_check_auth)):
+    task = create_kanban_task(req.title, req.description, req.agent_id, req.column)
+    return task
+
+
+@app.patch("/kanban/tasks/{task_id}")
+async def update_kanban_task_endpoint(task_id: int, req: KanbanTaskUpdateRequest, _=Depends(_check_auth)):
+    task = update_kanban_task(task_id, **req.model_dump(exclude_none=True))
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@app.post("/kanban/tasks/{task_id}/move")
+async def move_kanban_task(task_id: int, req: KanbanTaskMoveRequest, _=Depends(_check_auth)):
+    task = update_kanban_task(task_id, column=req.column, position=req.position or 0)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@app.delete("/kanban/tasks/{task_id}")
+async def delete_kanban_task_endpoint(task_id: int, _=Depends(_check_auth)):
+    delete_kanban_task(task_id)
+    return {"status": "deleted"}
+
+
+@app.post("/kanban/tasks/{task_id}/run")
+async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
+    """Run agent on a kanban task. Moves it to in_progress, then review when done."""
+    tasks = get_kanban_tasks()
+    task = next((t for t in tasks if t["id"] == task_id), None)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Move to in_progress
+    update_kanban_task(task_id, column="in_progress", status="running")
+
+    # Build prompt with agent identity prepended
+    agent_identity = ""
+    if task.get("agent_name"):
+        agent_identity = f"You are {task['agent_name']}."
+        if task.get("agent_system_prompt") or task.get("system_prompt"):
+            sp = task.get("system_prompt") or ""
+            agent_identity += f"\n{sp}"
+
+    prompt = task["description"] or task["title"]
+    full_prompt = f"{agent_identity}\n\n---\n\nTask: {task['title']}\n\n{task['description']}".strip() if agent_identity else f"Task: {task['title']}\n\n{task['description']}".strip()
+
+    async def _run():
+        try:
+            # Use a dedicated chat_id per task to isolate session
+            chat_id = -(task_id + 100000)
+            result = await run_agent(chat_id, full_prompt)
+            artifact_md = f"# {task['title']}\n\n{result.text}\n"
+            # Save .md artifact to workspace
+            artifact_filename = f"task_{task_id}_{task['title'][:30].replace(' ', '_').lower()}.md"
+            artifact_path = os.path.join(CONFIG.workspace, "artifacts", artifact_filename)
+            os.makedirs(os.path.dirname(artifact_path), exist_ok=True)
+            with open(artifact_path, "w") as f:
+                f.write(artifact_md)
+            update_kanban_task(task_id, column="review", status="done", artifact=artifact_path)
+        except Exception as e:
+            core_logger.error(f"Kanban task {task_id} run failed: {e}")
+            update_kanban_task(task_id, status="error", column="backlog")
+
+    asyncio.create_task(_run())
+    return {"status": "started", "task_id": task_id}
+
+
+@app.get("/kanban/tasks/{task_id}/artifact")
+async def get_kanban_artifact(task_id: int, _=Depends(_check_auth)):
+    tasks = get_kanban_tasks()
+    task = next((t for t in tasks if t["id"] == task_id), None)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not task.get("artifact"):
+        raise HTTPException(status_code=404, detail="No artifact yet")
+    try:
+        content = open(task["artifact"], errors="replace").read()
+        return {"content": content, "path": task["artifact"]}
+    except Exception:
+        # Return stored artifact text if file missing
+        return {"content": task.get("artifact", ""), "path": None}

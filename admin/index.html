@@ -614,6 +614,319 @@
   ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
 
+  /* ── Kanban ── */
+  #page-kanban { flex: 1; overflow: hidden; flex-direction: column; }
+
+  #kanban-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg1);
+    flex-shrink: 0;
+  }
+
+  #kanban-board {
+    flex: 1;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+
+  .kb-col {
+    width: 300px;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .kb-col-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg1);
+  }
+
+  .kb-col-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .kb-col-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    flex: 1;
+  }
+
+  .kb-count {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: var(--bg3);
+    color: var(--text3);
+    font-weight: 700;
+  }
+
+  .kb-add-btn {
+    background: none;
+    border: none;
+    color: var(--text3);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 2px;
+    transition: color 0.15s;
+  }
+
+  .kb-add-btn:hover { color: var(--amber); }
+
+  .kb-cards {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    scrollbar-width: thin;
+  }
+
+  .kb-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 10px 12px;
+    cursor: default;
+    transition: border-color 0.15s;
+    position: relative;
+  }
+
+  .kb-card:hover { border-color: var(--border2); }
+
+  .kb-card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .kb-agent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 2px;
+    font-size: 10px;
+    font-weight: 700;
+    flex-shrink: 0;
+    background: var(--bg3);
+  }
+
+  .kb-card-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .kb-card-desc {
+    font-size: 11px;
+    color: var(--text3);
+    line-height: 1.5;
+    margin-bottom: 8px;
+    white-space: pre-wrap;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+
+  .kb-card-footer {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .kb-status {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .kb-status.idle { background: var(--bg3); color: var(--text3); }
+  .kb-status.running { background: #1e293b; color: var(--blue); animation: blink 1s infinite; }
+  .kb-status.done { background: #0d1f17; color: var(--green); }
+  .kb-status.error { background: #1a0a0a; color: var(--red); }
+
+  .kb-card-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+  }
+
+  .kb-btn {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    padding: 2px 7px;
+    font-size: 10px;
+    font-family: var(--font);
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .kb-btn:hover { background: var(--bg1); color: var(--text); border-color: var(--border2); }
+  .kb-btn.run { border-color: #1e3a5f; color: var(--blue); }
+  .kb-btn.run:hover { background: #0d1f2e; }
+  .kb-btn.artifact { border-color: #1a3020; color: var(--green); }
+  .kb-btn.artifact:hover { background: #0a1c10; }
+  .kb-btn.del { border-color: #2a1010; color: var(--red); }
+  .kb-btn.del:hover { background: #1a0808; }
+
+  /* Agent panel */
+  #agents-panel {
+    position: fixed;
+    top: 42px;
+    right: 0;
+    bottom: 32px;
+    width: 380px;
+    background: var(--bg1);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    z-index: 50;
+  }
+
+  #agents-panel.open { transform: translateX(0); }
+
+  #agents-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .agent-card {
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin: 10px 12px 0;
+    overflow: hidden;
+  }
+
+  .agent-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--bg2);
+    cursor: pointer;
+  }
+
+  .agent-avatar {
+    width: 28px; height: 28px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .agent-card-body {
+    padding: 10px 12px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .agent-card-body.open { display: flex; }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+  }
+
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--bg1);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    padding: 24px;
+    width: 460px;
+    max-width: 90vw;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .modal-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--amber);
+    text-transform: uppercase;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  /* Artifact viewer */
+  #artifact-modal .modal { width: 640px; }
+  #artifact-content {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 16px;
+    font-size: 12px;
+    line-height: 1.7;
+    max-height: 60vh;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    scrollbar-width: thin;
+  }
+
+  /* Column color accents */
+  .kb-col[data-col="backlog"]     .kb-col-dot { background: var(--text3); }
+  .kb-col[data-col="in_progress"] .kb-col-dot { background: var(--blue); }
+  .kb-col[data-col="review"]      .kb-col-dot { background: var(--amber); }
+  .kb-col[data-col="done"]        .kb-col-dot { background: var(--green); }
+
+  .kb-col[data-col="review"] .kb-col-title { color: var(--amber); }
+
   /* ── Toast ── */
   #toast {
     position: fixed;
@@ -646,6 +959,7 @@
   <nav>
     <a href="#chat" class="nav-link active">⬡ CHAT</a>
     <a href="#sessions" class="nav-link">⬡ SESSIONS</a>
+    <a href="#kanban" class="nav-link">⬡ KANBAN</a>
     <a href="#tasks" class="nav-link">⬡ TASKS</a>
     <a href="#files" class="nav-link">⬡ FILES</a>
     <a href="#logs" class="nav-link">⬡ LOGS</a>
@@ -672,6 +986,54 @@
       <div id="session-list"></div>
       <div id="session-trace">
         <div class="empty"><div class="empty-icon">◈</div>Select a session</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KANBAN -->
+  <div id="page-kanban" class="page">
+    <div id="kanban-toolbar">
+      <span style="font-size:10px;font-weight:700;letter-spacing:0.12em;color:var(--text3);">KANBAN</span>
+      <span style="flex:1;"></span>
+      <button class="btn btn-ghost" id="kb-agents-btn" style="height:30px;padding:0 12px;font-size:10px;">⚙ AGENTS</button>
+      <button class="btn" id="kb-new-task-btn" style="height:30px;padding:0 14px;font-size:10px;">+ NEW TASK</button>
+    </div>
+    <div id="kanban-board">
+      <div class="kb-col" data-col="backlog">
+        <div class="kb-col-header">
+          <div class="kb-col-dot"></div>
+          <div class="kb-col-title">Backlog</div>
+          <div class="kb-count" id="cnt-backlog">0</div>
+          <button class="kb-add-btn" data-col="backlog" title="Add task">+</button>
+        </div>
+        <div class="kb-cards" id="col-backlog"></div>
+      </div>
+      <div class="kb-col" data-col="in_progress">
+        <div class="kb-col-header">
+          <div class="kb-col-dot"></div>
+          <div class="kb-col-title">In Progress</div>
+          <div class="kb-count" id="cnt-in_progress">0</div>
+          <button class="kb-add-btn" data-col="in_progress" title="Add task">+</button>
+        </div>
+        <div class="kb-cards" id="col-in_progress"></div>
+      </div>
+      <div class="kb-col" data-col="review">
+        <div class="kb-col-header">
+          <div class="kb-col-dot"></div>
+          <div class="kb-col-title">Ready for Review</div>
+          <div class="kb-count" id="cnt-review">0</div>
+          <button class="kb-add-btn" data-col="review" title="Add task">+</button>
+        </div>
+        <div class="kb-cards" id="col-review"></div>
+      </div>
+      <div class="kb-col" data-col="done">
+        <div class="kb-col-header">
+          <div class="kb-col-dot"></div>
+          <div class="kb-col-title">Done</div>
+          <div class="kb-count" id="cnt-done">0</div>
+          <button class="kb-add-btn" data-col="done" title="Add task">+</button>
+        </div>
+        <div class="kb-cards" id="col-done"></div>
       </div>
     </div>
   </div>
@@ -875,6 +1237,7 @@ function fmtBytes(n) {
 const pages = {
   chat: document.getElementById('page-chat'),
   sessions: document.getElementById('page-sessions'),
+  kanban: document.getElementById('page-kanban'),
   tasks: document.getElementById('page-tasks'),
   files: document.getElementById('page-files'),
   logs: document.getElementById('page-logs'),
@@ -893,6 +1256,7 @@ function navigate(hash) {
   });
   if (page === 'chat' && !chatHistoryLoaded) loadChatHistory();
   if (page === 'sessions') loadSessions();
+  if (page === 'kanban') loadKanban();
   if (page === 'tasks') loadTasks();
   if (page === 'files') loadFiles('');
   if (page === 'logs') initLogs();
@@ -1538,6 +1902,355 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
   }
 });
 
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// KANBAN
+// ══════════════════════════════════════════════════════════════════════════════
+
+const COLS = ['backlog', 'in_progress', 'review', 'done'];
+let kbTasks = [];
+let kbAgents = [];
+let kbNewTaskCol = 'backlog';
+let kbPollInterval = null;
+
+async function loadKanban() {
+  const [td, ad] = await Promise.all([
+    api('GET', '/kanban'),
+    api('GET', '/agents'),
+  ]);
+  kbTasks = td.tasks || [];
+  kbAgents = ad.agents || [];
+  renderKanban();
+}
+
+function renderKanban() {
+  // Clear columns
+  COLS.forEach(c => {
+    document.getElementById('col-' + c).innerHTML = '';
+    document.getElementById('cnt-' + c).textContent = 0;
+  });
+
+  // Populate
+  const byCol = {};
+  COLS.forEach(c => byCol[c] = []);
+  kbTasks.forEach(t => { (byCol[t.column] || (byCol[t.column] = [])).push(t); });
+
+  COLS.forEach(col => {
+    const tasks = byCol[col] || [];
+    document.getElementById('cnt-' + col).textContent = tasks.length;
+    const container = document.getElementById('col-' + col);
+    if (tasks.length === 0) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:10px;padding:24px 8px;letter-spacing:0.06em;">EMPTY</div>';
+      return;
+    }
+    tasks.forEach(task => {
+      container.appendChild(buildCard(task, col));
+    });
+  });
+}
+
+function buildCard(task, col) {
+  const card = document.createElement('div');
+  card.className = 'kb-card';
+  card.dataset.id = task.id;
+
+  const agentColor = task.agent_color || '#555';
+  const agentEmoji = task.agent_emoji || '';
+  const agentName  = task.agent_name  || '';
+
+  const agentBadge = agentName
+    ? `<span class="kb-agent-badge" style="color:${agentColor};border:1px solid ${agentColor}33;">${agentEmoji} ${agentName}</span>`
+    : '';
+
+  const statusCls = {'idle':'idle','running':'running','done':'done','error':'error'}[task.status] || 'idle';
+  const statusLabel = {'idle':'','running':'● RUNNING','done':'DONE','error':'ERROR'}[task.status] || '';
+  const statusHtml = statusLabel ? `<span class="kb-status ${statusCls}">${statusLabel}</span>` : '';
+
+  // Navigation arrows
+  const colIdx = COLS.indexOf(col);
+  const leftBtn  = colIdx > 0
+    ? `<button class="kb-btn" onclick="moveTask(${task.id},'${COLS[colIdx-1]}')">←</button>` : '';
+  const rightBtn = colIdx < COLS.length - 1
+    ? `<button class="kb-btn" onclick="moveTask(${task.id},'${COLS[colIdx+1]}')">→</button>` : '';
+
+  const runBtn = (col !== 'done' && task.status !== 'running')
+    ? `<button class="kb-btn run" onclick="runKbTask(${task.id})">▶ RUN</button>` : '';
+  const artifactBtn = task.artifact
+    ? `<button class="kb-btn artifact" onclick="viewArtifact(${task.id})">◉ RESULT</button>` : '';
+  const delBtn = `<button class="kb-btn del" onclick="deleteKbTask(${task.id})">✕</button>`;
+
+  const descHtml = task.description
+    ? `<div class="kb-card-desc">${escHtml(task.description)}</div>` : '';
+
+  card.innerHTML = `
+    <div class="kb-card-top">
+      ${agentBadge}
+      <div class="kb-card-title">${escHtml(task.title)}</div>
+    </div>
+    ${descHtml}
+    <div class="kb-card-footer">
+      ${statusHtml}
+      <div class="kb-card-actions">
+        ${leftBtn}${rightBtn}${runBtn}${artifactBtn}${delBtn}
+      </div>
+    </div>`;
+  return card;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function moveTask(taskId, col) {
+  await api('POST', `/kanban/tasks/${taskId}/move`, { column: col });
+  await loadKanban();
+}
+
+async function runKbTask(taskId) {
+  toast('Starting agent...');
+  await api('POST', `/kanban/tasks/${taskId}/run`);
+  await loadKanban();
+  // Poll while running
+  if (!kbPollInterval) {
+    kbPollInterval = setInterval(async () => {
+      const d = await api('GET', '/kanban');
+      kbTasks = d.tasks || [];
+      renderKanban();
+      const stillRunning = kbTasks.some(t => t.status === 'running');
+      if (!stillRunning) { clearInterval(kbPollInterval); kbPollInterval = null; }
+    }, 3000);
+  }
+}
+
+async function deleteKbTask(taskId) {
+  if (!confirm('Delete this task?')) return;
+  await api('DELETE', `/kanban/tasks/${taskId}`);
+  await loadKanban();
+}
+
+async function viewArtifact(taskId) {
+  try {
+    const d = await api('GET', `/kanban/tasks/${taskId}/artifact`);
+    document.getElementById('artifact-content').textContent = d.content;
+    document.getElementById('artifact-modal').classList.add('open');
+  } catch(e) {
+    toast('No artifact yet');
+  }
+}
+
+// New task modal
+document.getElementById('kb-new-task-btn').addEventListener('click', () => {
+  kbNewTaskCol = 'backlog';
+  openNewTaskModal('backlog');
+});
+
+document.querySelectorAll('.kb-add-btn').forEach(btn => {
+  btn.addEventListener('click', () => openNewTaskModal(btn.dataset.col));
+});
+
+function openNewTaskModal(col) {
+  kbNewTaskCol = col;
+  document.getElementById('kt-col').value = col;
+  document.getElementById('kt-title').value = '';
+  document.getElementById('kt-desc').value = '';
+  populateAgentSelect();
+  document.getElementById('task-modal').classList.add('open');
+  setTimeout(() => document.getElementById('kt-title').focus(), 50);
+}
+
+function populateAgentSelect() {
+  const sel = document.getElementById('kt-agent');
+  sel.innerHTML = '<option value="">— no agent —</option>';
+  kbAgents.forEach(a => {
+    sel.innerHTML += `<option value="${a.id}">${a.emoji} ${a.name}</option>`;
+  });
+}
+
+document.getElementById('task-modal-cancel').addEventListener('click', () => {
+  document.getElementById('task-modal').classList.remove('open');
+});
+
+document.getElementById('task-modal-save').addEventListener('click', async () => {
+  const title = document.getElementById('kt-title').value.trim();
+  if (!title) return;
+  const agentId = document.getElementById('kt-agent').value;
+  const desc    = document.getElementById('kt-desc').value.trim();
+  const col     = document.getElementById('kt-col').value;
+  await api('POST', '/kanban/tasks', {
+    title, description: desc,
+    agent_id: agentId ? parseInt(agentId) : null,
+    column: col,
+  });
+  document.getElementById('task-modal').classList.remove('open');
+  await loadKanban();
+});
+
+// Agents panel
+document.getElementById('kb-agents-btn').addEventListener('click', () => {
+  const panel = document.getElementById('agents-panel');
+  panel.classList.toggle('open');
+  if (panel.classList.contains('open')) renderAgentsPanel();
+});
+
+document.getElementById('agents-panel-close').addEventListener('click', () => {
+  document.getElementById('agents-panel').classList.remove('open');
+});
+
+function renderAgentsPanel() {
+  const list = document.getElementById('agents-list');
+  list.innerHTML = '';
+  kbAgents.forEach(a => {
+    const card = document.createElement('div');
+    card.className = 'agent-card';
+    card.innerHTML = `
+      <div class="agent-card-header" onclick="this.nextElementSibling.classList.toggle('open')">
+        <div class="agent-avatar" style="background:${a.color}22;border:1px solid ${a.color}44;">
+          <span>${a.emoji}</span>
+        </div>
+        <span style="font-weight:700;font-size:12px;flex:1;">${escHtml(a.name)}</span>
+        <span style="font-size:10px;color:var(--text3);">▾</span>
+      </div>
+      <div class="agent-card-body">
+        <div class="form-field">
+          <div class="form-label">Name</div>
+          <input class="form-input" id="ae-name-${a.id}" value="${escHtml(a.name)}" style="font-size:11px;">
+        </div>
+        <div style="display:flex;gap:8px;">
+          <div class="form-field" style="flex:1;">
+            <div class="form-label">Emoji</div>
+            <input class="form-input" id="ae-emoji-${a.id}" value="${a.emoji}" style="font-size:16px;width:60px;">
+          </div>
+          <div class="form-field" style="flex:1;">
+            <div class="form-label">Color</div>
+            <input type="color" id="ae-color-${a.id}" value="${a.color}" style="width:50px;height:32px;border:1px solid var(--border);border-radius:2px;background:var(--bg2);cursor:pointer;">
+          </div>
+        </div>
+        <div class="form-field">
+          <div class="form-label">System Prompt / Identity</div>
+          <textarea class="form-input" id="ae-prompt-${a.id}" rows="4" style="font-size:11px;">${escHtml(a.system_prompt)}</textarea>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn" style="height:28px;padding:0 12px;font-size:10px;" onclick="saveAgent(${a.id})">SAVE</button>
+          <button class="btn btn-ghost btn-red" style="height:28px;padding:0 10px;font-size:10px;border-color:var(--red);color:var(--red);background:transparent;" onclick="deleteAgent(${a.id})">DELETE</button>
+        </div>
+      </div>`;
+    list.appendChild(card);
+  });
+  if (kbAgents.length === 0) {
+    list.innerHTML = '<div style="color:var(--text3);font-size:11px;text-align:center;padding:24px 16px;">No agents yet. Create one below.</div>';
+  }
+}
+
+async function saveAgent(id) {
+  const name   = document.getElementById(`ae-name-${id}`).value.trim();
+  const emoji  = document.getElementById(`ae-emoji-${id}`).value.trim();
+  const color  = document.getElementById(`ae-color-${id}`).value;
+  const prompt = document.getElementById(`ae-prompt-${id}`).value;
+  await api('PATCH', `/agents/${id}`, { name, emoji, color, system_prompt: prompt });
+  await loadKanban();
+  renderAgentsPanel();
+  toast('Agent saved');
+}
+
+async function deleteAgent(id) {
+  if (!confirm('Delete this agent?')) return;
+  await api('DELETE', `/agents/${id}`);
+  await loadKanban();
+  renderAgentsPanel();
+  toast('Agent deleted');
+}
+
+document.getElementById('new-agent-btn').addEventListener('click', async () => {
+  const name = document.getElementById('new-agent-name').value.trim();
+  if (!name) return;
+  if (kbAgents.length >= 10) { toast('Max 10 agents'); return; }
+  await api('POST', '/agents', { name, emoji: '🤖', color: '#' + Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'), system_prompt: '' });
+  document.getElementById('new-agent-name').value = '';
+  await loadKanban();
+  renderAgentsPanel();
+  toast('Agent created');
+});
+
+// Close artifact modal
+document.getElementById('artifact-modal-close').addEventListener('click', () => {
+  document.getElementById('artifact-modal').classList.remove('open');
+});
+document.getElementById('artifact-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('artifact-modal')) {
+    document.getElementById('artifact-modal').classList.remove('open');
+  }
+});
+document.getElementById('task-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('task-modal')) {
+    document.getElementById('task-modal').classList.remove('open');
+  }
+});
+
+
 </script>
+
+<!-- Agents Panel -->
+<div id="agents-panel">
+  <div id="agents-panel-header">
+    <span style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:var(--amber);">⚙ AGENTS</span>
+    <span style="flex:1;"></span>
+    <button id="agents-panel-close" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;">✕</button>
+  </div>
+  <div id="agents-list" style="flex:1;overflow-y:auto;scrollbar-width:thin;"></div>
+  <div style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;">
+    <input class="form-input" id="new-agent-name" placeholder="New agent name..." style="flex:1;font-size:11px;height:32px;padding:0 8px;">
+    <button class="btn" id="new-agent-btn" style="height:32px;padding:0 12px;font-size:10px;">+ ADD</button>
+  </div>
+</div>
+
+<!-- New Task Modal -->
+<div class="modal-overlay" id="task-modal">
+  <div class="modal">
+    <div class="modal-title">NEW TASK</div>
+    <div class="form-field">
+      <div class="form-label">Title</div>
+      <input class="form-input" id="kt-title" placeholder="Task title">
+    </div>
+    <div class="form-field">
+      <div class="form-label">Description / Prompt for agent</div>
+      <textarea class="form-input" id="kt-desc" rows="4" placeholder="Describe what the agent should do..."></textarea>
+    </div>
+    <div style="display:flex;gap:12px;">
+      <div class="form-field" style="flex:1;">
+        <div class="form-label">Assign Agent</div>
+        <select class="form-input" id="kt-agent">
+          <option value="">— no agent —</option>
+        </select>
+      </div>
+      <div class="form-field" style="flex:1;">
+        <div class="form-label">Column</div>
+        <select class="form-input" id="kt-col">
+          <option value="backlog">Backlog</option>
+          <option value="in_progress">In Progress</option>
+          <option value="review">Ready for Review</option>
+          <option value="done">Done</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="task-modal-cancel">CANCEL</button>
+      <button class="btn" id="task-modal-save">CREATE TASK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Artifact Modal -->
+<div class="modal-overlay" id="artifact-modal">
+  <div class="modal" style="width:640px;max-width:92vw;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span class="modal-title">◉ ARTIFACT</span>
+      <span style="flex:1;"></span>
+      <button id="artifact-modal-close" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;">✕</button>
+    </div>
+    <div id="artifact-content" class="artifact-content" style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:16px;font-size:12px;line-height:1.7;max-height:60vh;overflow-y:auto;white-space:pre-wrap;scrollbar-width:thin;"></div>
+  </div>
+</div>
+
 </body>
 </html>
