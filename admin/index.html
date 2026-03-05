@@ -1199,7 +1199,7 @@ const API_KEY = (() => {
   return k;
 })();
 
-const CHAT_ID = parseInt(localStorage.getItem('lc_chat_id') || '0');
+let CHAT_ID = parseInt(localStorage.getItem('lc_chat_id') || '0');
 
 const headers = () => ({ 'Content-Type': 'application/json', 'X-Api-Key': API_KEY });
 
@@ -1274,6 +1274,19 @@ async function checkHealth() {
     document.getElementById('status-conn').innerHTML = '<span class="status-ok">● online</span>';
     document.getElementById('model-name').textContent = d.model;
     document.getElementById('status-ws').textContent = d.workspace || '—';
+
+    // Sync CHAT_ID from owner_id if not set
+    if (!CHAT_ID) {
+      try {
+        const s = await fetch(API + '/settings', { headers: headers() }).then(r => r.json());
+        if (s.owner_id) {
+          CHAT_ID = s.owner_id;
+          localStorage.setItem('lc_chat_id', String(CHAT_ID));
+          // Reload history now that we have correct ID
+          if (!chatHistoryLoaded) loadChatHistory();
+        }
+      } catch {}
+    }
   } catch {
     document.getElementById('status-conn').innerHTML = '<span class="status-err">● offline</span>';
   }
