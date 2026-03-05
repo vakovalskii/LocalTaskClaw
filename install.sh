@@ -857,4 +857,5 @@ else
   echo -e "  Логи:     ${BOLD}tail -f /tmp/localtaskclaw-core.log${NC}"
 fi
 echo -e "  Admin UI: ${BOLD}${ADMIN_URL}${NC}  (пароль: API Secret выше)"
+echo -e "  ${RED}Удалить:${NC}  ${BOLD}bash ~/.localtaskclaw/app/uninstall.sh${NC}"
 echo ""
