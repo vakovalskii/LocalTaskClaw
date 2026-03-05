@@ -423,17 +423,9 @@ fi
 # ШАГ 5 — ВЕБ-ПОИСК
 # =============================================================================
 
-step "Шаг 5 — Веб-поиск (Brave)"
-dim "  Получить ключ: https://api.search.brave.com/"
-echo ""
-echo -ne "${BOLD}Brave API key${NC} ${YELLOW}[Enter = пропустить]${NC}: " >/dev/tty
-read -rs BRAVE_KEY </dev/tty; echo "" >/dev/tty
-BRAVE_KEY="$(sanitize "$BRAVE_KEY")"
-if [[ -n "$BRAVE_KEY" ]]; then
-  success "Brave Search подключён"
-else
-  warn "Веб-поиск отключён (добавишь позже в Settings)"
-fi
+step "Шаг 5 — Веб-поиск"
+BRAVE_KEY=""
+success "Веб-поиск через DuckDuckGo включён по умолчанию (Brave API опционально — настройки)"
 
 # =============================================================================
 # ШАГ 6 — ПОДТВЕРЖДЕНИЕ
@@ -450,7 +442,7 @@ printf "${BOLD}│${NC} %-18s %-25s ${BOLD}│${NC}\n" "Модель"        "$M
 SHORT_URL="$LLM_BASE_URL"
 [[ ${#SHORT_URL} -gt 25 ]] && SHORT_URL="${SHORT_URL:0:22}..."
 printf "${BOLD}│${NC} %-18s %-25s ${BOLD}│${NC}\n" "LLM URL"       "$SHORT_URL"
-printf "${BOLD}│${NC} %-18s %-25s ${BOLD}│${NC}\n" "Brave Search"  "${BRAVE_KEY:+подключён}${BRAVE_KEY:-отключён}"
+printf "${BOLD}│${NC} %-18s %-25s ${BOLD}│${NC}\n" "Веб-поиск"     "DuckDuckGo (+ Brave в настройках)"
 echo -e "${BOLD}└──────────────────────────────────────────────┘${NC}"
 echo ""
 echo -ne "${BOLD}Запустить установку? [Y/n]${NC}: " >/dev/tty
