@@ -17,6 +17,9 @@ from config import CONFIG
 from logger import core_logger
 from agent.run import run_agent
 from agent.session import sessions
+
+# Track running kanban asyncio tasks for cancellation
+_kanban_running: dict[int, asyncio.Task] = {}
 from db import (
     get_db, get_scheduled_tasks,
     get_agents, create_agent, update_agent, delete_agent,
@@ -564,19 +567,36 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
             sessions.clear(chat_id)
             result = await run_agent(chat_id, task_prompt, task_mode=True, extra_system=extra_system)
             artifact_md = f"# {task['title']}\n\n{result.text}\n"
-            # Save .md artifact to workspace
             artifact_filename = f"task_{task_id}_{task['title'][:30].replace(' ', '_').lower()}.md"
             artifact_path = os.path.join(CONFIG.workspace, "artifacts", artifact_filename)
             os.makedirs(os.path.dirname(artifact_path), exist_ok=True)
             with open(artifact_path, "w") as f:
                 f.write(artifact_md)
             update_kanban_task(task_id, column="review", status="done", artifact=artifact_path)
+        except asyncio.CancelledError:
+            core_logger.info(f"Kanban task {task_id} cancelled")
+            update_kanban_task(task_id, status="idle", column="backlog")
         except Exception as e:
             core_logger.error(f"Kanban task {task_id} run failed: {e}")
             update_kanban_task(task_id, status="error", column="backlog")
+        finally:
+            _kanban_running.pop(task_id, None)
 
-    asyncio.create_task(_run())
+    t = asyncio.create_task(_run())
+    _kanban_running[task_id] = t
     return {"status": "started", "task_id": task_id}
+
+
+@app.post("/kanban/tasks/{task_id}/cancel")
+async def cancel_kanban_task(task_id: int, _=Depends(_check_auth)):
+    """Cancel a running kanban task."""
+    t = _kanban_running.get(task_id)
+    if t and not t.done():
+        t.cancel()
+        return {"status": "cancelled", "task_id": task_id}
+    # Task not running in memory — just reset status in DB
+    update_kanban_task(task_id, status="idle", column="backlog")
+    return {"status": "reset", "task_id": task_id}
 
 
 @app.get("/kanban/tasks/{task_id}/artifact")

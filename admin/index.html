@@ -2116,6 +2116,8 @@ function buildCard(task, col) {
 
   const runBtn = (col !== 'done' && task.status !== 'running')
     ? `<button class="kb-btn run" onclick="runKbTask(${task.id})">▶ RUN</button>` : '';
+  const stopBtn = task.status === 'running'
+    ? `<button class="kb-btn del" onclick="cancelKbTask(${task.id})" style="color:var(--red);border-color:var(--red)40;">■ STOP</button>` : '';
   const artifactBtn = task.artifact
     ? `<button class="kb-btn artifact" onclick="viewArtifact(${task.id})">◉ RESULT</button>` : '';
   const delBtn = `<button class="kb-btn del" onclick="deleteKbTask(${task.id})">✕</button>`;
@@ -2132,7 +2134,7 @@ function buildCard(task, col) {
     <div class="kb-card-footer">
       ${statusHtml}
       <div class="kb-card-actions">
-        ${leftBtn}${rightBtn}${runBtn}${artifactBtn}${delBtn}
+        ${leftBtn}${rightBtn}${runBtn}${stopBtn}${artifactBtn}${delBtn}
       </div>
     </div>`;
   return card;
@@ -2161,6 +2163,13 @@ async function runKbTask(taskId) {
       if (!stillRunning) { clearInterval(kbPollInterval); kbPollInterval = null; }
     }, 3000);
   }
+}
+
+async function cancelKbTask(taskId) {
+  await api('POST', `/kanban/tasks/${taskId}/cancel`);
+  if (kbPollInterval) { clearInterval(kbPollInterval); kbPollInterval = null; }
+  await loadKanban();
+  toast('Task stopped');
 }
 
 async function deleteKbTask(taskId) {
