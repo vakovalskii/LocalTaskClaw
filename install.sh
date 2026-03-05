@@ -40,20 +40,20 @@ dim()     { echo -e "${DIM}$*${NC}"; }
 prompt() {
   local var_name="$1" message="$2" default="${3:-}" input
   if [[ -n "$default" ]]; then
-    echo -ne "${BOLD}$message${NC} ${YELLOW}[${default}]${NC}: "
+    echo -ne "${BOLD}$message${NC} ${YELLOW}[${default}]${NC}: " >/dev/tty
   else
-    echo -ne "${BOLD}$message${NC}: "
+    echo -ne "${BOLD}$message${NC}: " >/dev/tty
   fi
-  read -r input
+  read -r input </dev/tty
   [[ -z "$input" && -n "$default" ]] && input="$default"
-  eval "$var_name='$input'"
+  printf -v "$var_name" '%s' "$input"
 }
 
 prompt_secret() {
   local var_name="$1" message="$2" input
-  echo -ne "${BOLD}$message${NC}: "
-  read -rs input; echo ""
-  eval "$var_name='$input'"
+  echo -ne "${BOLD}$message${NC}: " >/dev/tty
+  read -rs input </dev/tty; echo "" >/dev/tty
+  printf -v "$var_name" '%s' "$input"
 }
 
 spinner_start() {
@@ -392,8 +392,8 @@ fi
 step "Шаг 5 — Веб-поиск (Brave)"
 dim "  Получить ключ: https://api.search.brave.com/"
 echo ""
-echo -ne "${BOLD}Brave API key${NC} ${YELLOW}[Enter = пропустить]${NC}: "
-read -rs BRAVE_KEY; echo ""
+echo -ne "${BOLD}Brave API key${NC} ${YELLOW}[Enter = пропустить]${NC}: " >/dev/tty
+read -rs BRAVE_KEY </dev/tty; echo "" >/dev/tty
 if [[ -n "$BRAVE_KEY" ]]; then
   success "Brave Search подключён"
 else
@@ -418,8 +418,8 @@ printf "${BOLD}│${NC} %-18s %-25s ${BOLD}│${NC}\n" "LLM URL"       "$SHORT_U
 printf "${BOLD}│${NC} %-18s %-25s ${BOLD}│${NC}\n" "Brave Search"  "${BRAVE_KEY:+подключён}${BRAVE_KEY:-отключён}"
 echo -e "${BOLD}└──────────────────────────────────────────────┘${NC}"
 echo ""
-echo -ne "${BOLD}Запустить установку? [Y/n]${NC}: "
-read -r CONFIRM; CONFIRM="${CONFIRM:-Y}"
+echo -ne "${BOLD}Запустить установку? [Y/n]${NC}: " >/dev/tty
+read -r CONFIRM </dev/tty; CONFIRM="${CONFIRM:-Y}"
 [[ "$CONFIRM" =~ ^[Yy] ]] || { info "Отменено."; exit 0; }
 
 # =============================================================================
