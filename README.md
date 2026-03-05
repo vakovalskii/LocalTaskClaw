@@ -31,9 +31,11 @@ The interactive wizard walks through mode selection, Telegram bot setup, model c
 ```
 core/           Python ReAct agent + FastAPI + SQLite
 bot/            Telegram bot (single-user, OWNER_ID guard)
-admin/          Single-file SPA admin UI (index.html)
+frontend/       Admin UI — React + TypeScript + Tailwind CSS (builds to admin/)
+admin/          Built SPA output served by Core at /admin
 scripts/        Utilities (seed_kanban.py)
 tests/          End-to-end integration tests
+ltc             Unified CLI for all operations
 ```
 
 | Component | Role |
@@ -61,7 +63,24 @@ Agent runs as a Python process directly on the host. Full filesystem access. Req
 
 Same as native, but the agent is confined to `~/.localtaskclaw/workspace`. File tools cannot escape the workspace directory.
 
-## Scripts
+## CLI (`ltc`)
+
+The installer places `ltc` in `~/bin/ltc`. All operations go through this single command.
+
+```
+ltc start              Start services (core + bot)
+ltc stop               Stop services
+ltc restart            Restart services
+ltc status             Show status, port, model
+ltc logs [core|bot]    Tail logs (default: core)
+ltc test [target]      Run tests (all | kanban | seed) [--keep]
+ltc seed [--reset]     Seed demo kanban board
+ltc update             Pull latest code & restart
+ltc build              Rebuild frontend (React → admin/)
+ltc open               Open admin UI in browser
+ltc uninstall          Remove LocalTaskClaw completely
+ltc help               Show help
+```
 
 ### Install
 
@@ -75,120 +94,97 @@ The wizard prompts for:
 - Owner Telegram ID (auto-detected via `/start` or entered manually)
 - LLM provider (Ollama with hardware-aware model picker, or external OpenAI-compatible API)
 
-After completion it registers system services and performs a health check.
+After completion it registers system services, performs a health check, and installs the `ltc` CLI.
 
 ### Update
 
 ```bash
-bash ~/.localtaskclaw/app/update.sh
+ltc update
 ```
 
-Pulls the latest code via git, reinstalls dependencies if `requirements.txt` changed, and restarts services. Supports `--quiet` flag for headless execution (called from API).
+Pulls the latest code via git, reinstalls dependencies if `requirements.txt` changed, rebuilds the frontend, and restarts services. Supports `--quiet` flag for headless execution (called from API).
 
 ### Uninstall
 
 ```bash
-bash ~/.localtaskclaw/app/uninstall.sh
+ltc uninstall
 ```
 
-Stops services, removes LaunchAgents/systemd units, deletes `~/.localtaskclaw` (code, venv, database, secrets, workspace), and cleans up log files. Prompts for confirmation before proceeding.
+Stops services, removes LaunchAgents/systemd units, deletes `~/.localtaskclaw` (code, venv, database, secrets, workspace), removes `~/bin/ltc`, and cleans up log files. Prompts for confirmation before proceeding.
 
 ### Demo Kanban Board
 
 Seed the board with 4 specialist worker agents, 1 orchestrator, and 5 demo tasks:
 
 ```bash
-~/.localtaskclaw/venv/bin/python ~/.localtaskclaw/app/scripts/seed_kanban.py
+ltc seed
 ```
 
 Reset all existing data and re-seed from scratch:
 
 ```bash
-~/.localtaskclaw/venv/bin/python ~/.localtaskclaw/app/scripts/seed_kanban.py --reset
+ltc seed --reset
 ```
 
 Print current board state without changes:
 
 ```bash
-~/.localtaskclaw/venv/bin/python ~/.localtaskclaw/app/scripts/seed_kanban.py --status
+ltc seed --status
 ```
-
-The script reads `API_SECRET` from `secrets/core.env` automatically. Override the API URL with the `API_URL` environment variable if needed.
 
 ### Run Tests
 
 Integration tests run against the live service at `localhost:11387`.
 
-Kanban CRUD, tool execution, worker/orchestrator lifecycle:
+Run all tests:
 
 ```bash
-~/.localtaskclaw/venv/bin/pytest ~/.localtaskclaw/app/tests/test_kanban_e2e.py -v -s
+ltc test
 ```
 
-Seed pipeline validation (runs `seed_kanban.py --reset` first, then verifies structure and orchestration):
+Kanban team-run e2e test (spawns agents, orchestrator dispatches workers, produces artifacts):
 
 ```bash
-~/.localtaskclaw/venv/bin/pytest ~/.localtaskclaw/app/tests/test_seed_e2e.py -v -s
+ltc test kanban
 ```
+
+Seed pipeline validation:
+
+```bash
+ltc test seed
+```
+
+Use `--keep` to preserve test data after the run (useful for inspecting results in the UI):
+
+```bash
+ltc test kanban --keep
+```
+
+### Build Frontend
+
+```bash
+ltc build
+```
+
+Installs npm dependencies and builds the React + Tailwind SPA into `admin/`.
 
 ## Service Management
 
-### macOS (launchctl)
+The `ltc` CLI auto-detects the platform and uses the appropriate service manager:
+
+| Platform | Backend | Notes |
+|----------|---------|-------|
+| macOS | `launchctl` | LaunchAgents, auto-start on login |
+| Linux | `systemd --user` | User units, `systemctl --user enable` for boot |
+| Docker | `docker compose` | Containers managed via compose |
+| Fallback | `nohup` | Direct process launch |
 
 ```bash
-# Start
-launchctl load ~/Library/LaunchAgents/io.localtaskclaw.core.plist
-launchctl load ~/Library/LaunchAgents/io.localtaskclaw.bot.plist
-
-# Stop
-launchctl unload ~/Library/LaunchAgents/io.localtaskclaw.core.plist
-launchctl unload ~/Library/LaunchAgents/io.localtaskclaw.bot.plist
-
-# Logs
-tail -f /tmp/localtaskclaw-core.log
-tail -f /tmp/localtaskclaw-bot.log
-```
-
-Services are registered as LaunchAgents and start automatically on login.
-
-### Linux (systemd)
-
-```bash
-# Start
-systemctl --user start localtaskclaw-core localtaskclaw-bot
-
-# Stop
-systemctl --user stop localtaskclaw-core localtaskclaw-bot
-
-# Status
-systemctl --user status localtaskclaw-core localtaskclaw-bot
-
-# Enable on boot
-systemctl --user enable localtaskclaw-core localtaskclaw-bot
-
-# Logs
-tail -f /tmp/localtaskclaw-core.log
-tail -f /tmp/localtaskclaw-bot.log
-```
-
-### Docker
-
-```bash
-# Start
-docker compose -f ~/localtaskclaw/docker-compose.yml up -d
-
-# Stop
-docker compose -f ~/localtaskclaw/docker-compose.yml down
-
-# Status
-docker compose -f ~/localtaskclaw/docker-compose.yml ps
-
-# Logs
-docker compose -f ~/localtaskclaw/docker-compose.yml logs -f
-
-# Update images
-docker compose -f ~/localtaskclaw/docker-compose.yml pull && \
-docker compose -f ~/localtaskclaw/docker-compose.yml up -d
+ltc start       # Start core + bot
+ltc stop        # Stop all services
+ltc restart     # Stop then start
+ltc status      # Show running state, port, model version
+ltc logs        # Tail core logs (or: ltc logs bot)
 ```
 
 ## Admin UI
