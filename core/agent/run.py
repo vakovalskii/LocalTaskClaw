@@ -119,7 +119,7 @@ async def run_agent(
         except Exception as e:
             agent_logger.error(f"LLM stream error: {e}")
             return AgentResult(
-                text=f"Ошибка связи с моделью: {e}",
+                text=f"Error connecting to model: {e}",
                 tool_events=tool_events,
             )
 
@@ -201,7 +201,7 @@ async def run_agent(
 
     # Max iterations reached
     agent_logger.warning(f"[{session_key}] Max iterations ({max_iter}) reached")
-    final_text = text or "Достигнут лимит шагов. Попробуй переформулировать задачу."
+    final_text = text or "Step limit reached. Try rephrasing the task."
     session.history = messages[1:]
     sessions.save(chat_id)
 

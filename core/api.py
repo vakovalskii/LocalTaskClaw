@@ -809,22 +809,22 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
 
     # Human-readable labels for common tools
     _TOOL_LABELS = {
-        "search_web": "🔍 поиск",
-        "fetch_page": "🌐 читаю страницу",
-        "read_file": "📄 читаю файл",
-        "write_file": "💾 пишу файл",
-        "list_files": "📁 список файлов",
-        "delete_file": "🗑 удаляю файл",
-        "kanban_list": "📋 смотрю доску",
-        "kanban_run": "▶ запускаю задачу",
-        "kanban_verify": "✅ верифицирую",
-        "kanban_report": "📊 отчёт",
-        "kanban_read_result": "📖 читаю результат",
-        "kanban_create": "➕ создаю задачу",
-        "kanban_create_agent": "🤖 создаю агента",
-        "telegram_notify": "💬 уведомление",
-        "python_eval": "🐍 запускаю код",
-        "shell_exec": "⚡ выполняю команду",
+        "search_web": "🔍 search",
+        "fetch_page": "🌐 reading page",
+        "read_file": "📄 reading file",
+        "write_file": "💾 writing file",
+        "list_files": "📁 listing files",
+        "delete_file": "🗑 deleting file",
+        "kanban_list": "📋 viewing board",
+        "kanban_run": "▶ starting task",
+        "kanban_verify": "✅ verifying",
+        "kanban_report": "📊 report",
+        "kanban_read_result": "📖 reading result",
+        "kanban_create": "➕ creating task",
+        "kanban_create_agent": "🤖 creating agent",
+        "telegram_notify": "💬 notification",
+        "python_eval": "🐍 running code",
+        "shell_exec": "⚡ executing command",
     }
 
     async def _on_kanban_event(event_type: str, data: dict):
@@ -852,7 +852,7 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
             # Fresh session per run — clear history so old runs don't bleed in
             chat_id = -(task_id + 100000)
             sessions.clear(chat_id)
-            update_kanban_task(task_id, last_action="🤔 думаю...")
+            update_kanban_task(task_id, last_action="🤔 thinking...")
             result = await run_agent(
                 chat_id, task_prompt, task_mode=True, extra_system=extra_system,
                 allowed_tools=agent_allowed_tools, allowed_paths=agent_allowed_paths,
@@ -925,20 +925,24 @@ async def get_kanban_artifact(task_id: int, _=Depends(_check_auth)):
 # ── Spawn project ──────────────────────────────────────────────────────────────
 
 _SPAWNER_SYSTEM = """\
-Ты — спавнер проектов. Получаешь описание задачи/проекта и должен за один ответ:
+<role>You are a project spawner.</role>
 
-1. ПРИДУМАТЬ команду: 2-4 агента-воркера с узкой специализацией + 1 оркестратор
-2. СОЗДАТЬ каждого агента через kanban_create_agent (name, emoji, color, role, system_prompt)
-   - Воркеры: role="worker", детальный system_prompt с инструкцией ЧТО делать и КУДА сохранять (artifacts/)
-   - Оркестратор: role="orchestrator", system_prompt со стандартным алгоритмом (запуск→верификация→отчёт)
-3. СОЗДАТЬ задачи для воркеров через kanban_create (title, description, agent_id, column="backlog")
-   - Чёткое описание задачи, указать имя файла для артефакта
-4. СОЗДАТЬ задачу для оркестратора через kanban_create (repeat_minutes=5 — НЕТ у обычного kanban_create)
-   - Если нужен repeat — создай задачу, потом вручную обнови (kanban_update с repeat_minutes если надо)
-5. ЗАПУСТИТЬ оркестратор через kanban_run
+<instructions>
+You receive a task/project description and must produce everything in a single response:
 
-Выбирай осмысленные специализации под проект. Не создавай дженериков.
-После создания всего — вывести краткое резюме: кто создан, что будет делать.
+1. DESIGN a team: 2-4 specialized worker agents + 1 orchestrator.
+2. CREATE each agent via kanban_create_agent (name, emoji, color, role, system_prompt).
+   - Workers: role="worker", detailed system_prompt explaining WHAT to do and WHERE to save results (artifacts/).
+   - Orchestrator: role="orchestrator", system_prompt with the standard algorithm (start → verify → report).
+3. CREATE tasks for workers via kanban_create (title, description, agent_id, column="backlog").
+   - Clear task description, specify the artifact filename.
+4. CREATE a task for the orchestrator via kanban_create (repeat_minutes=5 is NOT available in kanban_create).
+   - If repeat is needed, create the task first, then update it manually (kanban_update with repeat_minutes if necessary).
+5. START the orchestrator via kanban_run.
+
+Choose meaningful specializations for the project. Do not create generic agents.
+After creating everything, output a brief summary: who was created and what they will do.
+</instructions>
 """
 
 
@@ -954,7 +958,7 @@ async def spawn_project(req: SpawnProjectRequest, _=Depends(_check_auth)):
     board_id = board["id"]
 
     # Build spawner system prompt with the target board_id
-    spawner_system = _SPAWNER_SYSTEM + f"\n\nВАЖНО: все kanban_create вызывы должны передавать board_id={board_id}. Это новая доска специально для этого проекта."
+    spawner_system = _SPAWNER_SYSTEM + f"\n\nIMPORTANT: all kanban_create calls must pass board_id={board_id}. This is a new board created specifically for this project."
 
     spawn_session = -(999000 + board_id)  # unique session per board
 

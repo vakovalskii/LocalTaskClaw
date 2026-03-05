@@ -75,92 +75,109 @@ def delete(path):
 
 WORKER_AGENTS = [
     {
-        "name": "Новостной аналитик",
+        "name": "News Analyst",
         "emoji": "📰",
         "color": "#3b82f6",
         "role": "worker",
         "system_prompt": (
-            "Ты — новостной аналитик. Твоя работа: искать актуальные новости по заданной теме "
-            "(используй search_web), читать 2-3 источника (fetch_page), "
-            "составить краткий дайджест на русском языке (3-5 пунктов с источниками). "
-            "Сохрани результат через write_file в папку artifacts/ с именем из задачи. "
-            "Пиши конкретно и по делу — никаких заглушек."
+            "<role>You are a news analyst.</role>\n"
+            "<instructions>\n"
+            "Your job: find current news on a given topic (use search_web), "
+            "read 2-3 sources (fetch_page), and compile a short digest "
+            "(3-5 bullet points with source links).\n"
+            "Save the result via write_file to the artifacts/ folder "
+            "using the filename from the task.\n"
+            "Be specific and to the point — no placeholders.\n"
+            "</instructions>"
         ),
     },
     {
-        "name": "Веб-исследователь",
+        "name": "Web Researcher",
         "emoji": "🔍",
         "color": "#8b5cf6",
         "role": "worker",
         "system_prompt": (
-            "Ты — веб-исследователь. Получаешь тему или вопрос, "
-            "ищешь информацию через search_web и fetch_page (читай реальный контент страниц), "
-            "пишешь структурированный отчёт на русском: что нашёл, главные факты, сравнение, вывод. "
-            "Сохраняй результат через write_file в artifacts/. "
-            "Не придумывай данные — только то, что реально нашёл в сети."
+            "<role>You are a web researcher.</role>\n"
+            "<instructions>\n"
+            "You receive a topic or question, search for information via search_web "
+            "and fetch_page (read actual page content), then write a structured report: "
+            "what you found, key facts, comparison, conclusion.\n"
+            "Save the result via write_file to artifacts/.\n"
+            "Do not fabricate data — only use what you actually found online.\n"
+            "</instructions>"
         ),
     },
     {
-        "name": "Ревьювер кода",
+        "name": "Code Reviewer",
         "emoji": "🧑‍💻",
         "color": "#10b981",
         "role": "worker",
         "system_prompt": (
-            "Ты — code reviewer и аналитик рабочего пространства. "
-            "Используй list_files для обзора структуры, read_file для чтения конкретных файлов. "
-            "Пиши review: что хорошо, что плохо, конкретные предложения по улучшению с примерами. "
-            "Сохраняй отчёт через write_file в artifacts/. "
-            "Оценивай объективно, давай практические рекомендации."
+            "<role>You are a code reviewer and workspace analyst.</role>\n"
+            "<instructions>\n"
+            "Use list_files to survey the structure, read_file to read specific files.\n"
+            "Write a review: what is good, what is bad, specific improvement suggestions "
+            "with examples.\n"
+            "Save the report via write_file to artifacts/.\n"
+            "Evaluate objectively, provide practical recommendations.\n"
+            "</instructions>"
         ),
     },
     {
-        "name": "Писатель",
+        "name": "Writer",
         "emoji": "✍️",
         "color": "#f59e0b",
         "role": "worker",
         "system_prompt": (
-            "Ты — AI-писатель и контент-мейкер. Пишешь тексты по заданной теме: "
-            "статьи, эссе, описания, планы, сценарии. "
-            "При необходимости используй search_web для актуального контекста. "
-            "Пиши на русском, живым языком, структурированно. "
-            "Сохраняй результат через write_file в artifacts/."
+            "<role>You are an AI writer and content creator.</role>\n"
+            "<instructions>\n"
+            "You write texts on a given topic: articles, essays, descriptions, plans, scripts.\n"
+            "Use search_web for current context when needed.\n"
+            "Write in a lively, structured style.\n"
+            "Save the result via write_file to artifacts/.\n"
+            "</instructions>"
         ),
     },
 ]
 
 ORCHESTRATOR_AGENT = {
-    "name": "Главный оркестратор",
+    "name": "Chief Orchestrator",
     "emoji": "🎯",
     "color": "#ef4444",
     "role": "orchestrator",
     "system_prompt": (
-        "Ты — главный оркестратор команды AI-агентов. "
-        "Управляешь канбан-доской и координируешь работников.\n\n"
-        "АЛГОРИТМ каждого цикла:\n\n"
-        "## ШАГ 1 — ЗАПУСК\n"
-        "Вызови kanban_list. "
-        "Найди задачи в колонке backlog у которых есть назначенный агент (→ в списке написан агент). "
-        "ИСКЛЮЧИ из запуска свою собственную задачу (ту, которая сейчас running). "
-        "Для каждой подходящей задачи вызови kanban_run(task_id). "
-        "НЕ используй kanban_move — только kanban_run запускает агента.\n\n"
-        "## ШАГ 2 — ВЕРИФИКАЦИЯ\n"
-        "Найди задачи в колонке review. "
-        "Для каждой: вызови kanban_read_result(task_id). "
-        "ОДОБРЯЙ (approved=true) если артефакт содержит хоть какой-то текст (не пустой). "
-        "ОТКЛОНЯЙ (approved=false) ТОЛЬКО если ошибка или пустой файл. "
-        "Не будь перфекционистом — любой результат лучше повтора.\n\n"
-        "## ШАГ 3 — ОТЧЁТ\n"
-        "Вызови kanban_report с summary и списком всех обработанных задач.\n"
-        "ВАЖНО: используй правильные статусы в results:\n"
-        "- 'started' — если ты запустил задачу через kanban_run\n"
-        "- 'done' — если задача была верифицирована и одобрена\n"
-        "- 'failed' — если задача провалена или артефакт пуст\n"
-        "- 'skipped' — если задачу пропустил\n"
-        "Не пиши произвольный текст в status — только эти значения.\n\n"
-        "СТОП-ПРАВИЛА:\n"
-        "- Не трогай задачи в колонке in_progress и done\n"
-        "- Не запускай свою собственную задачу через kanban_run\n"
-        "- Не используй kanban_move для перемещения задач воркеров"
+        "<role>You are the chief orchestrator of an AI agent team. "
+        "You manage the kanban board and coordinate workers.</role>\n\n"
+        "<algorithm>\n"
+        "<step name=\"dispatch\">\n"
+        "Call kanban_list. "
+        "Find tasks in the backlog column that have an assigned agent. "
+        "EXCLUDE your own task (the one currently running) from dispatch. "
+        "For each eligible task, call kanban_run(task_id). "
+        "Do NOT use kanban_move — only kanban_run launches an agent.\n"
+        "</step>\n\n"
+        "<step name=\"verify\">\n"
+        "Find tasks in the review column. "
+        "For each one: call kanban_read_result(task_id). "
+        "APPROVE (approved=true) if the artifact contains any text (non-empty). "
+        "REJECT (approved=false) ONLY if there is an error or empty file. "
+        "Do not be a perfectionist — any result is better than a retry.\n"
+        "</step>\n\n"
+        "<step name=\"report\">\n"
+        "Call kanban_report with a summary and a list of all processed tasks.\n"
+        "IMPORTANT: use correct statuses in results:\n"
+        "- 'started' — if you launched the task via kanban_run\n"
+        "- 'done' — if the task was verified and approved\n"
+        "- 'failed' — if the task failed or the artifact is empty\n"
+        "- 'skipped' — if you skipped the task\n"
+        "Do not write arbitrary text in status — only these values.\n"
+        "</step>\n"
+        "</algorithm>\n\n"
+        "<stop_rules>\n"
+        "- Do not touch tasks in the in_progress and done columns\n"
+        "- Do not launch your own task via kanban_run\n"
+        "- Do not use kanban_move to move worker tasks\n"
+        "</stop_rules>"
     ),
 }
 
@@ -168,69 +185,69 @@ ORCHESTRATOR_AGENT = {
 
 TASKS = [
     {
-        "title": "Дайджест новостей по AI",
+        "title": "AI News Digest",
         "description": (
-            "Найди 5 самых интересных новостей про AI, LLM и AI-агентов за последнюю неделю. "
-            "Для каждой: заголовок, суть в 2 предложениях, ссылка на источник. "
-            "Сохрани в artifacts/ai_news_digest.md"
+            "Find the 5 most interesting news stories about AI, LLMs, and AI agents from the past week. "
+            "For each: headline, gist in 2 sentences, link to the source. "
+            "Save to artifacts/ai_news_digest.md"
         ),
-        "agent": "Новостной аналитик",
+        "agent": "News Analyst",
         "column": "backlog",
     },
     {
-        "title": "Топ open-source LLM для локального запуска",
+        "title": "Top Open-Source LLMs for Local Deployment",
         "description": (
-            "Исследуй какие open-source LLM модели сейчас лучшие для запуска на своём железе. "
-            "Критерии: качество ответов, размер модели (GB), требования к VRAM, лицензия. "
-            "Сделай сравнительную таблицу топ-5 моделей 2025 года. "
-            "Сохрани в artifacts/top_local_llm.md"
+            "Research which open-source LLM models are currently the best for running on local hardware. "
+            "Criteria: answer quality, model size (GB), VRAM requirements, license. "
+            "Create a comparison table of the top 5 models of 2025. "
+            "Save to artifacts/top_local_llm.md"
         ),
-        "agent": "Веб-исследователь",
+        "agent": "Web Researcher",
         "column": "backlog",
     },
     {
-        "title": "Обзор структуры воркспейса",
+        "title": "Workspace Structure Review",
         "description": (
-            "Изучи структуру файлов в рабочем пространстве: используй list_files. "
-            "Напиши отчёт: что есть, как организовано, что можно улучшить. "
-            "Предложи схему организации папок. "
-            "Сохрани в artifacts/workspace_review.md"
+            "Examine the file structure of the workspace: use list_files. "
+            "Write a report: what exists, how it is organized, what can be improved. "
+            "Propose a folder organization scheme. "
+            "Save to artifacts/workspace_review.md"
         ),
-        "agent": "Ревьювер кода",
+        "agent": "Code Reviewer",
         "column": "backlog",
     },
     {
-        "title": "Эссе: AI-агенты в 2027 году",
+        "title": "Essay: AI Agents in 2027",
         "description": (
-            "Напиши эссе на 400-600 слов: 'Как AI-агенты изменят повседневную жизнь к 2027 году'. "
-            "Опирайся на реальные тренды (используй search_web для контекста). "
-            "Структура: введение, 3 конкретных примера, вывод. "
-            "Сохрани в artifacts/ai_agents_2027.md"
+            "Write a 400-600 word essay: 'How AI Agents Will Change Everyday Life by 2027'. "
+            "Base it on real trends (use search_web for context). "
+            "Structure: introduction, 3 specific examples, conclusion. "
+            "Save to artifacts/ai_agents_2027.md"
         ),
-        "agent": "Писатель",
+        "agent": "Writer",
         "column": "backlog",
     },
     {
-        "title": "Сравнение: Claude vs GPT-4 vs Gemini",
+        "title": "Comparison: Claude vs GPT-4 vs Gemini",
         "description": (
-            "Исследуй текущее состояние трёх топовых LLM: Claude, GPT-4o, Gemini 1.5 Pro. "
-            "Сравни по: качеству reasoning, стоимости API, контекстному окну, особенностям. "
-            "Напиши честное сравнение с рекомендацией под разные задачи. "
-            "Сохрани в artifacts/llm_comparison.md"
+            "Research the current state of three top LLMs: Claude, GPT-4o, Gemini 1.5 Pro. "
+            "Compare by: reasoning quality, API cost, context window, unique features. "
+            "Write an honest comparison with recommendations for different use cases. "
+            "Save to artifacts/llm_comparison.md"
         ),
-        "agent": "Веб-исследователь",
+        "agent": "Web Researcher",
         "column": "backlog",
     },
 ]
 
 ORCHESTRATOR_TASK = {
-    "title": "Цикл оркестрации",
+    "title": "Orchestration Cycle",
     "description": (
-        "Запусти полный цикл оркестрации: "
-        "проверь backlog → запусти агентов → верифицируй результаты → отправь отчёт. "
-        "Работает автоматически каждые 5 минут."
+        "Run a full orchestration cycle: "
+        "check backlog -> launch agents -> verify results -> send report. "
+        "Runs automatically every 5 minutes."
     ),
-    "agent": "Главный оркестратор",
+    "agent": "Chief Orchestrator",
     "column": "backlog",
     "repeat_minutes": 5,
 }
@@ -251,7 +268,7 @@ def _print_board():
     agents = get("/agents")["agents"]
 
     print(f"\n{'='*60}")
-    print(f"  АГЕНТЫ ({len(agents)})")
+    print(f"  AGENTS ({len(agents)})")
     print(f"{'='*60}")
     for a in agents:
         role_badge = "[orchestrator]" if a.get("role") == "orchestrator" else "[worker]"
@@ -266,7 +283,7 @@ def _print_board():
         "needs_human": "NEEDS HUMAN",
     }
     print(f"\n{'='*60}")
-    print(f"  КАНБАН ({len(tasks)} задач)")
+    print(f"  KANBAN ({len(tasks)} tasks)")
     print(f"{'='*60}")
     grouped: dict[str, list] = {}
     for t in tasks:
@@ -277,7 +294,7 @@ def _print_board():
             continue
         print(f"\n  [{col_names[col]}]")
         for t in items:
-            agent = f"→ {t['agent_emoji']} {t['agent_name']}" if t.get("agent_name") else "→ (без агента)"
+            agent = f"→ {t['agent_emoji']} {t['agent_name']}" if t.get("agent_name") else "→ (no agent)"
             repeat = f" ♻ {t['repeat_minutes']}m" if t.get("repeat_minutes") else ""
             status = f" [{t['status']}]" if t["status"] not in ("idle", "done") else ""
             print(f"    #{t['id']} {t['title']} {agent}{repeat}{status}")
@@ -287,23 +304,23 @@ def _print_board():
 # ── Reset ─────────────────────────────────────────────────────────────────────
 
 def reset_all():
-    print("⚠️  Удаляю все существующие задачи и агентов...")
+    print("⚠️  Deleting all existing tasks and agents...")
 
     tasks = get("/kanban")["tasks"]
     for t in tasks:
         try:
             delete(f"/kanban/tasks/{t['id']}")
         except Exception as e:
-            print(f"  Ошибка удаления задачи #{t['id']}: {e}")
+            print(f"  Error deleting task #{t['id']}: {e}")
 
     agents = get("/agents")["agents"]
     for a in agents:
         try:
             delete(f"/agents/{a['id']}")
         except Exception as e:
-            print(f"  Ошибка удаления агента #{a['id']}: {e}")
+            print(f"  Error deleting agent #{a['id']}: {e}")
 
-    print(f"  Удалено: {len(tasks)} задач, {len(agents)} агентов")
+    print(f"  Deleted: {len(tasks)} tasks, {len(agents)} agents")
 
 
 # ── Seed ──────────────────────────────────────────────────────────────────────
@@ -314,11 +331,11 @@ def seed():
     agent_map: dict[str, dict] = {}
 
     # Create workers
-    print("\n🤖 Создаю агентов...")
+    print("\n🤖 Creating agents...")
     for spec in WORKER_AGENTS:
         if spec["name"] in existing_agents:
             agent = existing_agents[spec["name"]]
-            print(f"  ↩ #{agent['id']} {spec['emoji']} {spec['name']} — уже существует")
+            print(f"  ↩ #{agent['id']} {spec['emoji']} {spec['name']} — already exists")
         else:
             agent = post("/agents", spec)
             print(f"  ✓ #{agent['id']} {spec['emoji']} {spec['name']}")
@@ -327,18 +344,18 @@ def seed():
     # Create orchestrator
     if ORCHESTRATOR_AGENT["name"] in existing_agents:
         orc_agent = existing_agents[ORCHESTRATOR_AGENT["name"]]
-        print(f"  ↩ #{orc_agent['id']} {ORCHESTRATOR_AGENT['emoji']} {ORCHESTRATOR_AGENT['name']} — уже существует")
+        print(f"  ↩ #{orc_agent['id']} {ORCHESTRATOR_AGENT['emoji']} {ORCHESTRATOR_AGENT['name']} — already exists")
     else:
         orc_agent = post("/agents", ORCHESTRATOR_AGENT)
         print(f"  ✓ #{orc_agent['id']} {ORCHESTRATOR_AGENT['emoji']} {ORCHESTRATOR_AGENT['name']} [orchestrator]")
     agent_map[ORCHESTRATOR_AGENT["name"]] = orc_agent
 
     # Create worker tasks
-    print("\n📋 Создаю задачи...")
+    print("\n📋 Creating tasks...")
     for spec in TASKS:
         if spec["title"] in existing_tasks:
             t = existing_tasks[spec["title"]]
-            print(f"  ↩ #{t['id']} {spec['title']} — уже существует")
+            print(f"  ↩ #{t['id']} {spec['title']} — already exists")
             continue
         agent = agent_map.get(spec["agent"])
         task_data = {
@@ -353,7 +370,7 @@ def seed():
     # Create orchestrator task
     if ORCHESTRATOR_TASK["title"] in existing_tasks:
         ot = existing_tasks[ORCHESTRATOR_TASK["title"]]
-        print(f"  ↩ #{ot['id']} {ORCHESTRATOR_TASK['title']} ♻ {ot.get('repeat_minutes', 0)}m — уже существует")
+        print(f"  ↩ #{ot['id']} {ORCHESTRATOR_TASK['title']} ♻ {ot.get('repeat_minutes', 0)}m — already exists")
     else:
         ot = post("/kanban/tasks", {
             "title": ORCHESTRATOR_TASK["title"],
@@ -364,7 +381,7 @@ def seed():
         })
         print(f"  ✓ #{ot['id']} {ORCHESTRATOR_TASK['title']} ♻ {ORCHESTRATOR_TASK['repeat_minutes']}m → 🎯 {ORCHESTRATOR_AGENT['name']}")
 
-    print(f"\n✅ Готово! Запусти оркестратор вручную через UI или:")
+    print(f"\n✅ Done! Launch the orchestrator manually via UI or:")
     print(f"   curl -X POST {BASE_URL}/kanban/tasks/{ot['id']}/run -H 'X-Api-Key: {API_SECRET}'\n")
 
 
@@ -381,7 +398,7 @@ def main():
         r = httpx.get(f"{BASE_URL}/health", timeout=5)
         r.raise_for_status()
     except Exception as e:
-        print(f"❌ API недоступен: {e}")
+        print(f"❌ API unavailable: {e}")
         sys.exit(1)
 
     if args.status:

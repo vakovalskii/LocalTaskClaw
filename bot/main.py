@@ -57,8 +57,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _is_owner(update):
         return
     await update.message.reply_text(
-        "👋 LocalTaskClaw запущен!\n\nПросто пиши — я твой личный агент.\n\n"
-        "Команды:\n/clear — сбросить историю\n/help — помощь"
+        "👋 LocalTaskClaw is running!\n\nJust type — I'm your personal agent.\n\n"
+        "Commands:\n/clear — reset history\n/help — help"
     )
 
 
@@ -68,22 +68,22 @@ async def cmd_clear(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     async with httpx.AsyncClient(timeout=10) as client:
         await client.post(f"{CORE_URL}/clear", json={"chat_id": chat_id}, headers=_headers())
-    await update.message.reply_text("🗑️ История очищена")
+    await update.message.reply_text("🗑️ History cleared")
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _is_owner(update):
         return
     await update.message.reply_text(
-        "🤖 *LocalTaskClaw* — твой личный AI-агент\n\n"
-        "Умею:\n"
-        "• Запускать команды в рабочем пространстве\n"
-        "• Искать в интернете\n"
-        "• Читать и создавать файлы\n"
-        "• Помнить важное между сессиями\n"
-        "• Выполнять задачи по расписанию\n\n"
-        "/clear — сбросить историю разговора\n"
-        "/help — эта справка",
+        "🤖 *LocalTaskClaw* — your personal AI agent\n\n"
+        "I can:\n"
+        "• Run commands in the workspace\n"
+        "• Search the internet\n"
+        "• Read and create files\n"
+        "• Remember important things between sessions\n"
+        "• Execute tasks on a schedule\n\n"
+        "/clear — reset conversation history\n"
+        "/help — this help message",
         parse_mode="Markdown",
     )
 
@@ -192,14 +192,14 @@ async def _stream_reply(
                                 break
 
     except httpx.TimeoutException:
-        accumulated = accumulated or "⏱️ Таймаут"
+        accumulated = accumulated or "⏱️ Timeout"
     except Exception as e:
         log.error(f"Stream error: {e}")
-        accumulated = accumulated or f"❌ Ошибка стрима: {e}"
+        accumulated = accumulated or f"❌ Stream error: {e}"
 
     # Final: delete placeholder + send full reply (split if needed)
     if not accumulated:
-        accumulated = "🤔 Агент не вернул ответ"
+        accumulated = "🤔 Agent returned no response"
 
     chunks = _split_message(accumulated, MAX_MSG_LEN)
 
@@ -274,7 +274,7 @@ async def handle_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle photo messages — acknowledge for now."""
     if not _is_owner(update):
         return
-    await update.message.reply_text("📷 Получил фото. Vision ещё не подключён в этой версии.")
+    await update.message.reply_text("📷 Photo received. Vision is not yet available in this version.")
 
 
 async def main():
@@ -290,8 +290,8 @@ async def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     await app.bot.set_my_commands([
-        BotCommand("clear", "Сбросить историю разговора"),
-        BotCommand("help", "Помощь"),
+        BotCommand("clear", "Reset conversation history"),
+        BotCommand("help", "Help"),
     ])
 
     log.info(f"Bot started, owner_id={OWNER_ID}")

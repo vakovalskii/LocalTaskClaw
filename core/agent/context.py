@@ -124,8 +124,8 @@ async def inject_memory(cwd: str, workspace_info: str) -> tuple[str, bool]:
         workspace_info += f"\n\n<MEMORY>\n{content}\n</MEMORY>"
         if overflow:
             workspace_info += (
-                f"\n\n⚠️ MEMORY.md вырос до {raw_len // 1024}kb и обрезается. "
-                "Хочешь, я пересоберу его — уберу устаревшее и сожму дубли?"
+                f"\n\n⚠️ MEMORY.md has grown to {raw_len // 1024}kb and is being truncated. "
+                "Would you like me to rebuild it — remove outdated entries and deduplicate?"
             )
         agent_logger.info(f"MEMORY.md injected: {len(content)} chars (overflow={overflow})")
 

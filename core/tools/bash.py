@@ -32,7 +32,7 @@ async def tool_run_command(args: dict, ctx: ToolContext) -> ToolResult:
         # Return a special error asking for confirmation via natural language
         return ToolResult(
             False,
-            error=f"⚠️ ТРЕБУЕТ ПОДТВЕРЖДЕНИЯ: {check.reason}\n\nЭта команда потенциально деструктивна. Пожалуйста, явно подтверди: напиши 'да, выполни: {command}' или уточни задачу.",
+            error=f"⚠️ REQUIRES CONFIRMATION: {check.reason}\n\nThis command is potentially destructive. Please confirm explicitly: type 'yes, run: {command}' or clarify the task.",
             metadata={"needs_confirm": True, "command": command},
         )
 

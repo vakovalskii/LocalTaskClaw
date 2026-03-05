@@ -349,7 +349,7 @@ async def tool_kanban_report(args: dict, ctx: ToolContext) -> ToolResult:
         "failed": "❌", "error": "❌", "needs_human": "🙋",
         "skipped": "⏭", "running": "⏳", "started": "🚀",
     }
-    lines = [f"📋 *Отчёт оркестратора*\n\n{summary}\n"]
+    lines = [f"📋 *Orchestrator Report*\n\n{summary}\n"]
     for r in results:
         status = r.get("status", "").lower()
         icon = status_icons.get(status, "•")
@@ -362,12 +362,12 @@ async def tool_kanban_report(args: dict, ctx: ToolContext) -> ToolResult:
     skip_count    = sum(1 for r in results if r.get("status", "").lower() == "skipped")
 
     parts = []
-    if started_count: parts.append(f"{started_count} запущено")
-    if done_count: parts.append(f"{done_count} выполнено")
-    if failed_count: parts.append(f"{failed_count} с ошибкой")
-    if skip_count: parts.append(f"{skip_count} пропущено")
-    if not parts: parts.append(f"{len(results)} обработано")
-    lines.append(f"\n*Итого:* {', '.join(parts)}")
+    if started_count: parts.append(f"{started_count} started")
+    if done_count: parts.append(f"{done_count} completed")
+    if failed_count: parts.append(f"{failed_count} failed")
+    if skip_count: parts.append(f"{skip_count} skipped")
+    if not parts: parts.append(f"{len(results)} processed")
+    lines.append(f"\n*Total:* {', '.join(parts)}")
 
     text = "\n".join(lines)
     url = f"https://api.telegram.org/bot{CONFIG.bot_token}/sendMessage"
