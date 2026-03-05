@@ -195,8 +195,11 @@ TG_TOKEN="" BOT_USERNAME="" OWNER_ID="" OWNER_NAME=""
 
 while true; do
   prompt_secret TG_TOKEN "Токен бота (от @BotFather)"
+  # trim whitespace/CR that can sneak in from copy-paste
+  TG_TOKEN="${TG_TOKEN//[$'\r\n\t ']}"
   if ! echo "$TG_TOKEN" | grep -qE '^[0-9]+:[A-Za-z0-9_-]{30,}$'; then
     error "Неверный формат. Должно быть: 1234567890:ABCdef..."
+    info  "Совет: скопируй токен из BotFather без лишних пробелов"
     continue
   fi
   spinner_start "Проверяю токен..."
@@ -213,9 +216,14 @@ while true; do
   fi
 done
 
+# Сбросить webhook если установлен — иначе getUpdates не работает
+spinner_start "Сбрасываю webhook (если есть)..."
+curl -s --max-time 5 "https://api.telegram.org/bot${TG_TOKEN}/deleteWebhook?drop_pending_updates=false" &>/dev/null || true
+spinner_stop
+
 echo ""
 info "Открой бота ${BOLD}@${BOT_USERNAME}${NC} в Telegram и нажми ${BOLD}/start${NC}"
-info "Жду сообщение... (120 сек, или Ctrl+C и введи ID вручную)"
+info "Жду 120 сек... Или введи Telegram ID вручную прямо сейчас."
 echo ""
 
 RESULT=$(python3 - "$TG_TOKEN" <<'PYEOF'
@@ -224,38 +232,48 @@ import sys, json, urllib.request, time
 token = sys.argv[1]
 offset = 0
 
+# Skip already-seen updates
 try:
-    url = f"https://api.telegram.org/bot{token}/getUpdates?limit=1&offset=-1"
-    r = urllib.request.urlopen(url, timeout=5)
+    url = f"https://api.telegram.org/bot{token}/getUpdates?limit=1&offset=-1&timeout=0"
+    r = urllib.request.urlopen(url, timeout=8)
     data = json.loads(r.read())
+    if not data.get("ok"):
+        # getUpdates forbidden — webhook active? Try anyway
+        pass
     updates = data.get("result", [])
     if updates:
         offset = updates[-1]["update_id"] + 1
-except:
-    pass
+except Exception as e:
+    sys.stderr.write(f"offset init error: {e}\n")
 
 deadline = time.time() + 120
 dots = 0
 while time.time() < deadline:
     try:
-        url = f"https://api.telegram.org/bot{token}/getUpdates?timeout=2&offset={offset}&allowed_updates=%5B%22message%22%5D"
-        r = urllib.request.urlopen(url, timeout=5)
+        # long-poll 5s, socket timeout 10s
+        url = (f"https://api.telegram.org/bot{token}"
+               f"/getUpdates?timeout=5&offset={offset}"
+               f"&allowed_updates=%5B%22message%22%5D")
+        r = urllib.request.urlopen(url, timeout=10)
         data = json.loads(r.read())
         for upd in data.get("result", []):
             offset = upd["update_id"] + 1
             msg = upd.get("message", {})
-            if msg.get("text", "").startswith("/start"):
+            text = msg.get("text", "")
+            if text.startswith("/start") or text:
                 uid  = msg.get("from", {}).get("id", "")
                 name = msg.get("from", {}).get("first_name", "User")
-                print(f"FOUND:{uid}:{name}")
-                sys.exit(0)
-    except:
-        pass
+                if uid:
+                    print(f"FOUND:{uid}:{name}")
+                    sys.exit(0)
+    except Exception as e:
+        sys.stderr.write(f"poll error: {e}\n")
+        time.sleep(2)
+        continue
     dots = (dots + 1) % 4
-    print(f"\r  Ожидание{'.' * dots}   ", end="", flush=True)
-    time.sleep(2)
+    print(f"\r  Ожидание /start{'.' * dots}   ", end="", flush=True)
 
-print("\rTIMEOUT" + " " * 30)
+print("\rTIMEOUT" + " " * 40)
 sys.exit(1)
 PYEOF
 ) || true
@@ -265,8 +283,13 @@ if echo "$RESULT" | grep -q "^FOUND:"; then
   OWNER_NAME=$(echo "$RESULT" | grep "^FOUND:" | head -1 | cut -d: -f3-)
   success "Владелец: ${BOLD}${OWNER_NAME}${NC} (ID: ${BOLD}${OWNER_ID}${NC})"
 else
-  warn "Не получил /start за 120 сек."
-  prompt OWNER_ID "Введи Telegram ID вручную" ""
+  echo ""
+  warn "Не поймал /start автоматически."
+  echo ""
+  echo -e "  Найди свой Telegram ID на: ${CYAN}https://t.me/userinfobot${NC}"
+  echo -e "  Или напиши ${BOLD}@userinfobot${NC} в Telegram — он ответит твоим ID."
+  echo ""
+  prompt OWNER_ID "Telegram ID владельца" ""
   OWNER_NAME="Owner"
 fi
 
