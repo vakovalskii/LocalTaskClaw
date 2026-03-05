@@ -37,6 +37,15 @@ error()   { echo -e "${RED}[✗]${NC} $*"; }
 step()    { echo -e "\n${BOLD}${CYAN}── $* ${NC}"; }
 dim()     { echo -e "${DIM}$*${NC}"; }
 
+sanitize() {
+  # Strip control characters (CR, LF, tab, and other non-printable chars) that
+  # can sneak in from copy-paste and break YAML/env files
+  local val="$1"
+  val="${val//[$'\r\n\t']}"          # remove CR, LF, tab
+  val="${val//[[:cntrl:]]}"          # remove any remaining control chars
+  printf '%s' "$val"
+}
+
 prompt() {
   local var_name="$1" message="$2" default="${3:-}" input
   if [[ -n "$default" ]]; then
@@ -46,6 +55,7 @@ prompt() {
   fi
   read -r input </dev/tty
   [[ -z "$input" && -n "$default" ]] && input="$default"
+  input="$(sanitize "$input")"
   printf -v "$var_name" '%s' "$input"
 }
 
@@ -53,6 +63,7 @@ prompt_secret() {
   local var_name="$1" message="$2" input
   echo -ne "${BOLD}$message${NC}: " >/dev/tty
   read -rs input </dev/tty; echo "" >/dev/tty
+  input="$(sanitize "$input")"
   printf -v "$var_name" '%s' "$input"
 }
 
@@ -417,6 +428,7 @@ dim "  Получить ключ: https://api.search.brave.com/"
 echo ""
 echo -ne "${BOLD}Brave API key${NC} ${YELLOW}[Enter = пропустить]${NC}: " >/dev/tty
 read -rs BRAVE_KEY </dev/tty; echo "" >/dev/tty
+BRAVE_KEY="$(sanitize "$BRAVE_KEY")"
 if [[ -n "$BRAVE_KEY" ]]; then
   success "Brave Search подключён"
 else
