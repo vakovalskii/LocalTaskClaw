@@ -344,17 +344,30 @@ async def tool_kanban_report(args: dict, ctx: ToolContext) -> ToolResult:
         return ToolResult(False, error="BOT_TOKEN or OWNER_ID not configured")
 
     # Build formatted Telegram message
-    status_icons = {"done": "✅", "failed": "❌", "needs_human": "🙋", "skipped": "⏭", "running": "⏳"}
+    status_icons = {
+        "done": "✅", "approved": "✅", "verified": "✅",
+        "failed": "❌", "error": "❌", "needs_human": "🙋",
+        "skipped": "⏭", "running": "⏳", "started": "🚀",
+    }
     lines = [f"📋 *Отчёт оркестратора*\n\n{summary}\n"]
     for r in results:
-        icon = status_icons.get(r.get("status", ""), "•")
+        status = r.get("status", "").lower()
+        icon = status_icons.get(status, "•")
         comment = f" — {r['comment']}" if r.get("comment") else ""
-        lines.append(f"{icon} #{r['task_id']} {r['title']}{comment}")
+        lines.append(f"{icon} #{r.get('task_id', '?')} {r.get('title', '?')}{comment}")
 
-    done_count    = sum(1 for r in results if r.get("status") == "done")
-    failed_count  = sum(1 for r in results if r.get("status") in ("failed", "needs_human"))
-    skip_count    = sum(1 for r in results if r.get("status") == "skipped")
-    lines.append(f"\n*Итого:* {done_count} выполнено, {failed_count} с ошибкой, {skip_count} пропущено")
+    started_count = sum(1 for r in results if r.get("status", "").lower() in ("started", "running"))
+    done_count    = sum(1 for r in results if r.get("status", "").lower() in ("done", "approved", "verified"))
+    failed_count  = sum(1 for r in results if r.get("status", "").lower() in ("failed", "error", "needs_human"))
+    skip_count    = sum(1 for r in results if r.get("status", "").lower() == "skipped")
+
+    parts = []
+    if started_count: parts.append(f"{started_count} запущено")
+    if done_count: parts.append(f"{done_count} выполнено")
+    if failed_count: parts.append(f"{failed_count} с ошибкой")
+    if skip_count: parts.append(f"{skip_count} пропущено")
+    if not parts: parts.append(f"{len(results)} обработано")
+    lines.append(f"\n*Итого:* {', '.join(parts)}")
 
     text = "\n".join(lines)
     url = f"https://api.telegram.org/bot{CONFIG.bot_token}/sendMessage"
