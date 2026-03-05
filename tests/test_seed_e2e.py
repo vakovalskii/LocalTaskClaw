@@ -30,34 +30,38 @@ ORC_TIMEOUT = 120      # seconds — orchestrator just dispatches
 POLL_INTERVAL = 4
 
 EXPECTED_WORKER_NAMES = {
-    "Новостной аналитик",
-    "Веб-исследователь",
-    "Ревьювер кода",
-    "Писатель",
+    "News Analyst",
+    "Web Researcher",
+    "Code Reviewer",
+    "Writer",
 }
-ORCHESTRATOR_NAME = "Главный оркестратор"
-ORCHESTRATOR_TASK_TITLE = "Цикл оркестрации"
+ORCHESTRATOR_NAME = "Chief Orchestrator"
+ORCHESTRATOR_TASK_TITLE = "Orchestration Cycle"
 ORCHESTRATOR_REPEAT_MINUTES = 5
 
 EXPECTED_TASK_TITLES = {
-    "Дайджест новостей по AI",
-    "Топ open-source LLM для локального запуска",
-    "Обзор структуры воркспейса",
-    "Эссе: AI-агенты в 2027 году",
-    "Сравнение: Claude vs GPT-4 vs Gemini",
+    "AI News Digest",
+    "Top Open-Source LLMs for Local Deployment",
+    "Workspace Structure Review",
+    "Essay: AI Agents in 2027",
+    "Comparison: Claude vs GPT-4 vs Gemini",
 }
 
 
 def _get_secret():
-    env_file = os.path.join(os.path.dirname(__file__), "..", "secrets", "core.env")
-    try:
-        with open(env_file) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("API_SECRET="):
-                    return line.split("=", 1)[1].strip()
-    except FileNotFoundError:
-        pass
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "..", "secrets", "core.env"),
+        os.path.expanduser("~/.localtaskclaw/app/secrets/core.env"),
+    ]
+    for env_file in candidates:
+        try:
+            with open(env_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("API_SECRET="):
+                        return line.split("=", 1)[1].strip()
+        except FileNotFoundError:
+            continue
     return os.environ.get("API_SECRET", "")
 
 
@@ -206,11 +210,11 @@ class TestWorkerExecution:
 
     def test_reviewer_completes_workspace_review(self):
         """
-        'Ревьювер кода' runs workspace review — requires no external API,
+        'Code Reviewer' runs workspace review — requires no external API,
         just list_files + write_file. Fast and reliable.
         """
         tasks = get("/kanban")["tasks"]
-        task = next((t for t in tasks if t["title"] == "Обзор структуры воркспейса"), None)
+        task = next((t for t in tasks if t["title"] == "Workspace Structure Review"), None)
         assert task is not None, "Workspace review task not found"
 
         # Reset to backlog if it drifted
@@ -238,10 +242,10 @@ class TestWorkerExecution:
 
     def test_writer_produces_artifact(self):
         """
-        'Писатель' writes an essay — no external search needed, pure generation.
+        'Writer' writes an essay — no external search needed, pure generation.
         """
         tasks = get("/kanban")["tasks"]
-        task = next((t for t in tasks if t["title"] == "Эссе: AI-агенты в 2027 году"), None)
+        task = next((t for t in tasks if t["title"] == "Essay: AI Agents in 2027"), None)
         assert task is not None, "Essay task not found"
 
         if task["column"] != "backlog":
@@ -364,7 +368,7 @@ class TestOrchestratorCycle:
 
         # Pick one worker task (workspace review — no external deps)
         worker_task = next(
-            (t for t in tasks if t["title"] == "Обзор структуры воркспейса"), None
+            (t for t in tasks if t["title"] == "Workspace Structure Review"), None
         )
         assert worker_task is not None
 

@@ -20,15 +20,19 @@ import pytest
 BASE_URL = os.environ.get("API_URL", "http://localhost:11387")
 
 def _get_secret():
-    env_file = os.path.join(os.path.dirname(__file__), "..", "secrets", "core.env")
-    try:
-        with open(env_file) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("API_SECRET="):
-                    return line.split("=", 1)[1].strip()
-    except FileNotFoundError:
-        pass
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "..", "secrets", "core.env"),
+        os.path.expanduser("~/.localtaskclaw/app/secrets/core.env"),
+    ]
+    for env_file in candidates:
+        try:
+            with open(env_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("API_SECRET="):
+                        return line.split("=", 1)[1].strip()
+        except FileNotFoundError:
+            continue
     return os.environ.get("API_SECRET", "")
 
 API_SECRET = _get_secret()
