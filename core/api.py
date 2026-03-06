@@ -916,6 +916,41 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
     return {"status": "started", "task_id": task_id}
 
 
+@app.post("/kanban/tasks/{task_id}/verify")
+async def verify_kanban_task(task_id: int, req: dict, _=Depends(_check_auth)):
+    """
+    Approve or reject a completed task after reviewing its result.
+    Body: {"approved": true/false, "comment": "feedback"}
+    """
+    approved = req.get("approved")
+    comment = req.get("comment", "").strip()
+    
+    if not comment:
+        raise HTTPException(status_code=400, detail="comment is required")
+    
+    tasks = get_kanban_tasks()
+    task = next((t for t in tasks if t["id"] == task_id), None)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    from db import update_kanban_task as db_update_kanban_task
+    
+    if approved:
+        # Approved → stays in review, status=verified
+        db_update_kanban_task(task_id, column="review", status="verified")
+        return {"status": "approved", "task_id": task_id, "column": "review"}
+    else:
+        retry_count = (task.get("retry_count") or 0) + 1
+        max_retries = 2
+        if retry_count > max_retries:
+            db_update_kanban_task(task_id, column="needs_human", status="idle", retry_count=retry_count)
+            return {"status": "rejected", "task_id": task_id, "column": "needs_human", "retry_count": retry_count}
+        else:
+            # Reset for retry — clear artifact so worker starts fresh
+            db_update_kanban_task(task_id, column="backlog", status="idle", artifact=None, retry_count=retry_count)
+            return {"status": "rejected", "task_id": task_id, "column": "backlog", "retry_count": retry_count}
+
+
 @app.post("/kanban/tasks/{task_id}/cancel")
 async def cancel_kanban_task(task_id: int, _=Depends(_check_auth)):
     """Cancel a running kanban task."""

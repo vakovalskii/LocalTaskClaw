@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "xiaozhi-kanban": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-u", "server_xiaozhi.py"],
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "XIAOZHI_BASE_URL": "http://localhost:11387",
+        "XIAOZHI_API_KEY": ""
+      }
+    }
+  }
+}
